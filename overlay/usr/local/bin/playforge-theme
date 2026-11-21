@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Playforge – Theme in der aktuellen Sitzung erneut anwenden.
+set -Eeuo pipefail
+
+exec /usr/local/lib/playforge/apply-user-theme.sh --force

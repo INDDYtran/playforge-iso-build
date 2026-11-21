@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Playforge Theme
+Comment=Wendet das Playforge-Theme beim ersten Login an
+Exec=/usr/local/lib/playforge/apply-user-theme.sh
+Icon=playforge
+Terminal=false
+NoDisplay=true
+OnlyShowIn=KDE;
+X-KDE-autostart-after=panel
+X-KDE-autostart-phase=2

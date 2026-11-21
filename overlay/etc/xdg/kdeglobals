@@ -1,0 +1,10 @@
+[KDE]
+LookAndFeelPackage=org.playforge.desktop
+widgetStyle=Breeze
+SingleClick=false
+
+[General]
+ColorScheme=Playforge
+
+[Icons]
+Theme=Playforge

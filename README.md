@@ -264,6 +264,26 @@ sudo playforge-tweaks reset           # Profil entfernen
 Das Profil wird in `/etc/playforge/profile` gespeichert und beim Booten von
 `playforge-profile.service` angewendet.
 
+### Playforge-Theme
+
+Live-System und installiertes System verwenden das globale KDE-Theme
+`org.playforge.desktop` mit dunklem Farbschema, Playforge-Wallpaper,
+eigenem Startbildschirm (Splash), angepasstem SDDM-Anmeldebildschirm und
+einem Icon-Theme auf Breeze-Basis. Die Einrichtung übernimmt
+`/usr/local/lib/playforge/apply-theme.sh`; beim ersten Login wendet
+`/usr/local/lib/playforge/apply-user-theme.sh` das Theme zusätzlich auf die
+Plasma-Sitzung an (u. a. Wallpaper).
+
+Theme in der laufenden Sitzung erneut anwenden:
+
+```bash
+playforge-theme
+```
+
+Das Theme lässt sich wie jedes globale KDE-Theme unter
+*Systemeinstellungen → Erscheinungsbild → Globales Design* wechseln; die
+Playforge-Varianten bleiben dort auswählbar.
+
 ### Spiele mit GameMode/MangoHud/Gamescope starten
 
 In Steam als Startoption:
@@ -310,9 +330,11 @@ profile/                     Overlay auf das archiso-Releng-Profil
   airootfs/                  Nur Live-System (SDDM-Autologin, Live-Setup)
 overlay/                     Dateien für Live-System *und* Installation
   etc/                       pacman.conf (multilib), Sysctl, zram, GameMode, udev, skel
-  usr/local/bin/             playforge-install/-doctor/-tweaks/-run
-  usr/local/lib/playforge/   configure-target.sh (Installation)
+  etc/xdg/                   KDE-Standardwerte und Theme-Autostart
+  usr/local/bin/             playforge-install/-doctor/-tweaks/-run/-theme
+  usr/local/lib/playforge/   configure-target.sh, Theme-Skripte
   usr/local/share/playforge/ Paketliste des Zielsystems
+  usr/share/                 Theme, Wallpaper, Farbschema, Icons, Logo
 ```
 
 Der Paketcache unter `.cache/pacman/` wird beim Container-Build angelegt und ist

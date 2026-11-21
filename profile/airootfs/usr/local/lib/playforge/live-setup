@@ -10,7 +10,10 @@ if [[ -d "$overlay_dir" ]]; then
 fi
 
 chmod 0755 /usr/local/bin/playforge-* 2>/dev/null || true
-chmod 0755 /usr/local/lib/playforge/configure-target.sh 2>/dev/null || true
+chmod 0755 /usr/local/lib/playforge/*.sh 2>/dev/null || true
+
+# Systemweite Theme-Komponenten (SDDM, Plasma-Stil) einrichten.
+/usr/local/lib/playforge/apply-theme.sh || true
 
 groups="wheel,video,render,audio,input,storage"
 if ! getent group gamemode >/dev/null 2>&1; then
@@ -36,6 +39,11 @@ chmod 0440 /etc/sudoers.d/99-playforge-live
 
 if (( new_user )); then
     chmod 0755 /home/gamer/Desktop/*.desktop 2>/dev/null || true
+fi
+
+install -d -m 0700 -o gamer -g gamer /home/gamer/.config
+if [[ -f /usr/share/pixmaps/playforge-logo.png ]]; then
+    install -m 0644 -o gamer -g gamer /usr/share/pixmaps/playforge-logo.png /home/gamer/.face.icon
 fi
 
 modprobe tcp_bbr 2>/dev/null || true

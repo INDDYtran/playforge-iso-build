@@ -3,6 +3,6 @@ Type=Application
 Name=Playforge installieren
 Comment=Installiert Playforge auf die Festplatte
 Exec=konsole -e playforge-install
-Icon=system-software-install
+Icon=playforge
 Terminal=false
 Categories=System;

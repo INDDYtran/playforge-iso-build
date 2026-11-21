@@ -1,0 +1,21 @@
+{
+  "KPackageStructure": "Plasma/LookAndFeel",
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "Playforge"
+      }
+    ],
+    "Category": "Global Themes",
+    "Description": "Dunkles Gaming-Theme mit Cyan- und Violett-Akzenten, Playforge-Wallpaper und eigenem Splashscreen.",
+    "Description[de]": "Dunkles Gaming-Theme mit Cyan- und Violett-Akzenten, Playforge-Wallpaper und eigenem Splashscreen.",
+    "Description[en]": "Dark gaming theme with cyan and violet accents, Playforge wallpaper and a custom splash screen.",
+    "Id": "org.playforge.desktop",
+    "License": "GPL-2.0-or-later",
+    "Name": "Playforge",
+    "Name[de]": "Playforge",
+    "Name[en]": "Playforge",
+    "Version": "1.0",
+    "Website": "https://github.com/INDDYtran/playforge-iso-build"
+  }
+}

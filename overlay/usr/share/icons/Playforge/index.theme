@@ -1,0 +1,21 @@
+[Icon Theme]
+Name=Playforge
+Comment=Playforge-Branding-Icons auf Basis von Breeze
+Inherits=breeze-dark,breeze,hicolor
+Directories=scalable/apps,scalable/places
+
+[scalable/apps]
+Size=128
+Scale=1
+Context=Applications
+Type=Scalable
+MinSize=16
+MaxSize=512
+
+[scalable/places]
+Size=128
+Scale=1
+Context=Places
+Type=Scalable
+MinSize=16
+MaxSize=512

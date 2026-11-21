@@ -296,8 +296,12 @@ fi
 
 info "Kopiere Playforge-Konfiguration"
 cp -a "$overlay_source/." "$target/"
+# Overlay zusätzlich im Zielsystem behalten, damit configure-target.sh es nach
+# pacstrap erneut anwenden kann (pacman überschreibt z. B. /etc/pacman.conf).
+install -d -m 0755 "$target/usr/local/share/playforge/overlay"
+cp -a "$overlay_source/." "$target/usr/local/share/playforge/overlay/"
 chmod 0755 "$target"/usr/local/bin/playforge-* 2>/dev/null || true
-chmod 0755 "$target/usr/local/lib/playforge/configure-target.sh" 2>/dev/null || true
+chmod 0755 "$target"/usr/local/lib/playforge/*.sh 2>/dev/null || true
 
 info "Installiere Pakete (kann 10–30 Minuten dauern)"
 mapfile -t packages < <(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$target_pkg_file" | awk 'NF')

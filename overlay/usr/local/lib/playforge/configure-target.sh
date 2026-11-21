@@ -20,8 +20,13 @@ if [[ -d /usr/local/share/playforge/overlay ]]; then
     cp -a /usr/local/share/playforge/overlay/etc/. /etc/
     cp -a /usr/local/share/playforge/overlay/usr/local/bin/. /usr/local/bin/
     cp -a /usr/local/share/playforge/overlay/usr/local/share/. /usr/local/share/
+    cp -a /usr/local/share/playforge/overlay/usr/share/. /usr/share/
 fi
 chmod 0755 /usr/local/bin/playforge-* 2>/dev/null || true
+chmod 0755 /usr/local/lib/playforge/*.sh 2>/dev/null || true
+
+# Playforge-Theme systemweit einrichten (SDDM, Plasma-Stil).
+/usr/local/lib/playforge/apply-theme.sh || warn "Playforge-Theme konnte nicht vollständig eingerichtet werden."
 
 info "Zeitzone"
 ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
@@ -68,6 +73,11 @@ if getent group gamemode >/dev/null 2>&1; then
 fi
 if ! id -u "$USERNAME" >/dev/null 2>&1; then
     useradd -m -G "$user_groups" -s /bin/bash "$USERNAME"
+fi
+install -d -m 0700 -o "$USERNAME" -g "$USERNAME" "/home/$USERNAME/.config"
+if [[ -f /usr/share/pixmaps/playforge-logo.png ]]; then
+    install -m 0644 -o "$USERNAME" -g "$USERNAME" \
+        /usr/share/pixmaps/playforge-logo.png "/home/$USERNAME/.face.icon"
 fi
 printf '%s:%s\n' "$USERNAME" "$USER_HASH" | chpasswd -e
 if [[ -n "$ROOT_HASH" ]]; then

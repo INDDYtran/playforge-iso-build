@@ -1,0 +1,19 @@
+{
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "Playforge"
+      }
+    ],
+    "Description": "Dunkle Playforge-Gaming-Tapete mit Cyan- und Violett-Akzenten.",
+    "Description[de]": "Dunkle Playforge-Gaming-Tapete mit Cyan- und Violett-Akzenten.",
+    "Description[en]": "Dark Playforge gaming wallpaper with cyan and violet accents.",
+    "Id": "Playforge",
+    "License": "CC-BY-SA-4.0",
+    "Name": "Playforge",
+    "Name[de]": "Playforge",
+    "Name[en]": "Playforge",
+    "Version": "1.0"
+  },
+  "X-KDE-PlasmaImageWallpaper": true
+}
