@@ -4,9 +4,10 @@
 //! über `/usr/local/lib/playforge/control-helper.sh`, ein Bash-Skript mit fester
 //! Befehlsliste, das nach Administratorrechten fragt (pkexec).
 
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
 use crate::system::have;
@@ -33,6 +34,114 @@ impl ActionResult {
             message: message.into(),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum ActionEvent {
+    Line(String),
+    Done(ActionResult),
+}
+
+/// Startet eine Helfer-Aktion und liefert ihre Ausgabe zeilenweise, damit
+/// lange Läufe (Systemupdates) live mitlesbar sind.
+pub fn spawn_stream(args: Vec<String>, label: String) -> Receiver<ActionEvent> {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let (program, full_args) = match privileged(&args) {
+            Ok(command) => command,
+            Err(message) => {
+                let _ = tx.send(ActionEvent::Done(ActionResult::failure(message)));
+                return;
+            }
+        };
+        let _ = tx.send(ActionEvent::Line(format!(
+            "$ {program} {}",
+            full_args.join(" ")
+        )));
+
+        let mut cmd = Command::new(&program);
+        cmd.args(&full_args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .env("SYSTEMD_COLORS", "0")
+            .env("NO_COLOR", "1");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
+
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(err) => {
+                let _ = tx.send(ActionEvent::Done(ActionResult::failure(format!(
+                    "{program} konnte nicht gestartet werden: {err}"
+                ))));
+                return;
+            }
+        };
+
+        let mut readers = Vec::new();
+        if let Some(stdout) = child.stdout.take() {
+            let sink = tx.clone();
+            readers.push(thread::spawn(move || pump(stdout, sink)));
+        }
+        if let Some(stderr) = child.stderr.take() {
+            let sink = tx.clone();
+            readers.push(thread::spawn(move || pump(stderr, sink)));
+        }
+
+        let status = child.wait();
+        for reader in readers {
+            let _ = reader.join();
+        }
+
+        let result = match status {
+            Ok(status) if status.success() => {
+                ActionResult::success(format!("{label}: abgeschlossen."))
+            }
+            Ok(status) => ActionResult::failure(format!(
+                "{label}: mit Exit-Code {} beendet.",
+                status.code().unwrap_or(-1)
+            )),
+            Err(err) => ActionResult::failure(format!("{label}: {err}")),
+        };
+        let _ = tx.send(ActionEvent::Done(result));
+    });
+    rx
+}
+
+fn pump(reader: impl Read, sink: Sender<ActionEvent>) {
+    for line in BufReader::new(reader).lines().map_while(Result::ok) {
+        if sink.send(ActionEvent::Line(line)).is_err() {
+            break;
+        }
+    }
+}
+
+/// Wählt den Weg zu root: ein vorhandenes `sudo -n`-Ticket oder pkexec.
+fn privileged(args: &[String]) -> Result<(String, Vec<String>), String> {
+    if !cfg!(target_os = "linux") {
+        return Err("Änderungen am System sind nur unter Playforge Linux möglich.".to_string());
+    }
+    if !Path::new(HELPER).exists() {
+        return Err(format!(
+            "Der Playforge-Helfer fehlt ({HELPER}). Bitte das System aktualisieren."
+        ));
+    }
+
+    if have("sudo") {
+        if let Ok(output) = run_plain("sudo", &join(&["-n", "true"], &[])) {
+            if output.status.success() {
+                return Ok(("sudo".to_string(), join(&["-n", HELPER], args)));
+            }
+        }
+    }
+    if have("pkexec") {
+        return Ok(("pkexec".to_string(), join(&[HELPER], args)));
+    }
+    Err("Weder sudo noch pkexec gefunden – die Änderung kann nicht autorisiert werden.".to_string())
 }
 
 /// Startet eine Helfer-Aktion im Hintergrund (der pkexec-Dialog blockiert die

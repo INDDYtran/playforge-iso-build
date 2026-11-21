@@ -15,8 +15,8 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
     ui::helper_notice(cc, ui);
 
     // --- GameMode ---------------------------------------------------------
-    ui::card(ui, "GameMode", |ui| {
-        ui.horizontal_wrapped(|ui| {
+    ui::panel_titled(ui, "GameMode", "/etc/gamemode.ini", |ui| {
+        ui.horizontal(|ui| {
             ui::badge(
                 ui,
                 if snap.gaming.gamemode {
@@ -25,69 +25,90 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
                     "GameMode fehlt"
                 },
                 if snap.gaming.gamemode {
-                    theme::GREEN
+                    theme::OK
                 } else {
-                    theme::RED
+                    theme::ERROR
                 },
             );
         });
-        ui.label(
-            RichText::new(
-                "GameMode hebt während des Spiels Priorität und Governor an. \
-                 Die Werte stehen in /etc/gamemode.ini.",
-            )
-            .size(12.5)
-            .color(theme::MUTED),
+        ui.add_space(8.0);
+        ui::hint(
+            ui,
+            "GameMode hebt während des Spiels Priorität und Governor an.",
         );
         ui.add_space(12.0);
 
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Governor").size(12.5).color(theme::MUTED));
-            egui::ComboBox::from_id_salt("gamemode-gov")
-                .width(170.0)
-                .selected_text(cc.gamemode_draft.desired_gov.clone())
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut cc.gamemode_draft.desired_gov,
-                        "performance".to_string(),
-                        "performance",
-                    );
-                    ui.selectable_value(
-                        &mut cc.gamemode_draft.desired_gov,
-                        "powersave".to_string(),
-                        "powersave",
-                    );
-                });
-
-            ui.add_space(14.0);
-            ui.label(RichText::new("softrealtime").size(12.5).color(theme::MUTED));
-            egui::ComboBox::from_id_salt("gamemode-rt")
-                .width(110.0)
-                .selected_text(cc.gamemode_draft.softrealtime.clone())
-                .show_ui(ui, |ui| {
-                    for value in ["auto", "on", "off"] {
+        ui::grid(ui, &[1.0, 1.0], |ui, column| {
+            if column == 0 {
+                ui::kicker(ui, "Governor");
+                ui.add_space(4.0);
+                egui::ComboBox::from_id_salt("gamemode-gov")
+                    .width(ui.available_width())
+                    .selected_text(cc.gamemode_draft.desired_gov.clone())
+                    .show_ui(ui, |ui| {
                         ui.selectable_value(
-                            &mut cc.gamemode_draft.softrealtime,
-                            value.to_string(),
-                            value,
+                            &mut cc.gamemode_draft.desired_gov,
+                            "performance".to_string(),
+                            "performance",
                         );
-                    }
-                });
+                        ui.selectable_value(
+                            &mut cc.gamemode_draft.desired_gov,
+                            "powersave".to_string(),
+                            "powersave",
+                        );
+                    });
+            } else {
+                ui::kicker(ui, "Softrealtime");
+                ui.add_space(4.0);
+                egui::ComboBox::from_id_salt("gamemode-rt")
+                    .width(ui.available_width())
+                    .selected_text(cc.gamemode_draft.softrealtime.clone())
+                    .show_ui(ui, |ui| {
+                        for value in ["auto", "on", "off"] {
+                            ui.selectable_value(
+                                &mut cc.gamemode_draft.softrealtime,
+                                value.to_string(),
+                                value,
+                            );
+                        }
+                    });
+            }
         });
 
-        ui.add_space(8.0);
-        ui.spacing_mut().slider_width = 260.0;
+        ui.add_space(12.0);
+        ui::kicker(ui, "Renice");
+        ui.add_space(2.0);
+        ui.spacing_mut().slider_width = ui.available_width().min(320.0);
         ui.add(
             egui::Slider::new(&mut cc.gamemode_draft.renice, 0..=19)
-                .text("renice")
+                .text("Priorität")
                 .min_decimals(0),
         );
-        ui.add_space(4.0);
-        ui::hint(
+        ui.add_space(2.0);
+        ui::mono_label(
             ui,
-            "renice 10 ist der Playforge-Standard; höhere Werte bevorzugen das Spiel stärker.",
+            "10 IST PLAYFORGE-STANDARD · HÖHER BEVORZUGT DAS SPIEL",
+            theme::FAINT,
+            9.0,
         );
 
+        ui.add_space(10.0);
+        ui.checkbox(
+            &mut cc.gamemode_draft.inhibit_screensaver,
+            "Bildschirmsperre während des Spiels verhindern",
+        );
+
+        ui.add_space(6.0);
+        ui::kicker(ui, "Reaper-Intervall");
+        ui.add_space(2.0);
+        ui.add(
+            egui::Slider::new(&mut cc.gamemode_draft.reaper_freq, 0..=120)
+                .text("Sekunden · 0 = aus")
+                .min_decimals(0),
+        );
+
+        ui.add_space(12.0);
+        ui::hairline(ui);
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.add_enabled_ui(!cc.action_pending(), |ui| {
@@ -97,6 +118,15 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
                         format!("desiredgov={}", cc.gamemode_draft.desired_gov),
                         format!("renice={}", cc.gamemode_draft.renice),
                         format!("softrealtime={}", cc.gamemode_draft.softrealtime),
+                        format!(
+                            "inhibit_screensaver={}",
+                            if cc.gamemode_draft.inhibit_screensaver {
+                                1
+                            } else {
+                                0
+                            }
+                        ),
+                        format!("reaper_freq={}", cc.gamemode_draft.reaper_freq),
                     ];
                     cc.apply_helper(args, "GameMode");
                 }
@@ -108,46 +138,41 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
                 ui::badge(
                     ui,
                     &format!(
-                        "aktiv: {} / {} / renice {}",
+                        "aktiv: {} / {} / renice {} / reaper {} s",
                         snap.settings.gamemode.desired_gov,
                         snap.settings.gamemode.softrealtime,
-                        snap.settings.gamemode.renice
+                        snap.settings.gamemode.renice,
+                        snap.settings.gamemode.reaper_freq
                     ),
-                    theme::COPPER,
+                    theme::MUTED,
                 );
             });
         });
     });
 
-    ui.add_space(14.0);
+    ui.add_space(ui::GAP);
 
     // --- MangoHud ---------------------------------------------------------
-    ui::card(ui, "MangoHud", |ui| {
-        ui.label(
-            RichText::new(
-                "Overlay-Profil für FPS, Frametimes und Temperaturen. Die Konfiguration \
-                 landet im Benutzerprofil und in /etc/skel für neue Konten.",
-            )
-            .size(12.5)
-            .color(theme::MUTED),
+    ui::panel_titled(ui, "MangoHud", "~/.config/MangoHud/MangoHud.conf", |ui| {
+        ui::hint(
+            ui,
+            "Overlay-Profil für FPS, Frametimes und Temperaturen. Die Konfiguration \
+             landet im Benutzerprofil und in /etc/skel für neue Konten.",
         );
-        ui.add_space(10.0);
+        ui.add_space(11.0);
 
         ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 14.0;
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
             for (value, label) in [
                 ("standard", "Standard"),
                 ("compact", "Kompakt"),
                 ("detailed", "Ausführlich"),
                 ("off", "Aus"),
             ] {
-                ui.radio_value(&mut cc.mangohud_choice, value.to_string(), label);
+                if ui::choice(ui, cc.mangohud_choice == value, label).clicked() {
+                    cc.mangohud_choice = value.to_string();
+                }
             }
-        });
-
-        ui.add_space(10.0);
-        ui.horizontal(|ui| {
-            ui::hint(ui, "Vorschau");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui::badge(
                     ui,
@@ -156,28 +181,42 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
                         "missing" => "keine Konfiguration".to_string(),
                         preset => format!("aktiv: {preset}"),
                     },
-                    theme::AMBER,
+                    theme::ACCENT,
                 );
             });
         });
-        ui.add_space(6.0);
-        ui::mono_block(
+
+        ui.add_space(11.0);
+        ui::code_block(
             ui,
             "mangohud-preview",
+            "Vorschau · preset.conf",
             preset_conf(&cc.mangohud_choice),
-            160.0,
+            150.0,
         );
 
         if !snap.settings.mangohud_conf.trim().is_empty() {
-            ui.add_space(8.0);
-            egui::CollapsingHeader::new(RichText::new("Aktive Konfiguration").size(12.0))
-                .id_salt("mangohud-active")
-                .show(ui, |ui| {
-                    ui.add_space(6.0);
-                    ui::mono_block(ui, "mangohud-active", &snap.settings.mangohud_conf, 180.0);
-                });
+            ui.add_space(10.0);
+            egui::CollapsingHeader::new(
+                RichText::new("Aktive Konfiguration")
+                    .font(theme::mono(10.0))
+                    .color(theme::MUTED),
+            )
+            .id_salt("mangohud-active")
+            .show(ui, |ui| {
+                ui.add_space(6.0);
+                ui::code_block(
+                    ui,
+                    "mangohud-active",
+                    "MangoHud.conf",
+                    &snap.settings.mangohud_conf,
+                    180.0,
+                );
+            });
         }
 
+        ui.add_space(12.0);
+        ui::hairline(ui);
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.add_enabled_ui(!cc.action_pending(), |ui| {
@@ -192,22 +231,19 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
         });
     });
 
-    ui.add_space(14.0);
+    ui.add_space(ui::GAP);
 
     // --- Startoptionen ----------------------------------------------------
-    ui::card(ui, "Startoptionen für Spiele", |ui| {
-        ui.label(
-            RichText::new(
-                "Diesen Befehl in Steam unter „Eigenschaften → Startoptionen“ eintragen. \
-                 %command% wird von Steam ersetzt.",
-            )
-            .size(12.5)
-            .color(theme::MUTED),
+    ui::panel_titled(ui, "Startoptionen", "steam → eigenschaften", |ui| {
+        ui::hint(
+            ui,
+            "Diesen Befehl in Steam unter „Eigenschaften → Startoptionen“ eintragen. \
+             %command% wird von Steam ersetzt.",
         );
-        ui.add_space(10.0);
+        ui.add_space(11.0);
 
         ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 16.0;
+            ui.spacing_mut().item_spacing = Vec2::new(16.0, 8.0);
             ui.checkbox(&mut cc.run_options.hud, "MangoHud-Overlay");
             ui.checkbox(&mut cc.run_options.gamemode, "GameMode");
             ui.checkbox(&mut cc.run_options.gamescope, "Gamescope");
@@ -217,34 +253,25 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
         });
 
         if cc.run_options.gamescope {
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Auflösung").size(12.5).color(theme::MUTED));
-                egui::ComboBox::from_id_salt("gamescope-res")
-                    .width(140.0)
-                    .selected_text(cc.run_options.resolution.clone())
-                    .show_ui(ui, |ui| {
-                        for value in ["1280x720", "1920x1080", "2560x1440", "3840x2160"] {
-                            ui.selectable_value(
-                                &mut cc.run_options.resolution,
-                                value.to_string(),
-                                value,
-                            );
-                        }
-                    });
-            });
+            ui.add_space(10.0);
+            ui::kicker(ui, "Auflösung");
+            ui.add_space(4.0);
+            egui::ComboBox::from_id_salt("gamescope-res")
+                .width(160.0)
+                .selected_text(cc.run_options.resolution.clone())
+                .show_ui(ui, |ui| {
+                    for value in ["1280x720", "1920x1080", "2560x1440", "3840x2160"] {
+                        ui.selectable_value(
+                            &mut cc.run_options.resolution,
+                            value.to_string(),
+                            value,
+                        );
+                    }
+                });
         }
 
-        let command = cc.run_options.command();
         ui.add_space(12.0);
-        ui.horizontal(|ui| {
-            ui::hint(ui, "Fertiger Befehl");
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui::copy_button(ui, &command, "Kopieren");
-            });
-        });
-        ui.add_space(6.0);
-        ui::mono_block(ui, "run-command", &command, 70.0);
+        ui::code_block(ui, "run-command", "Befehl", &cc.run_options.command(), 60.0);
 
         if !snap.gaming.gamemode && cc.run_options.gamemode {
             ui.add_space(10.0);
@@ -257,11 +284,11 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
         }
     });
 
-    ui.add_space(14.0);
+    ui.add_space(ui::GAP);
 
-    ui::card(ui, "Gaming-Stack", |ui| {
+    ui::panel_titled(ui, "Gaming-Stack", "", |ui| {
         ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
             ui::chip(ui, snap.gaming.gamemode, "GameMode");
             ui::chip(ui, snap.gaming.mangohud, "MangoHud");
             ui::chip(ui, snap.gaming.gamescope, "Gamescope");
@@ -271,12 +298,12 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
             ui::chip(ui, snap.gaming.goverlay, "GOverlay");
             ui::chip(ui, snap.gaming.lact, "LACT");
         });
-        ui.add_space(10.0);
-        ui::divider(ui);
+        ui.add_space(12.0);
+        ui::hairline(ui);
         ui.add_space(10.0);
         ui::kv(
             ui,
-            "Vulkan",
+            "VULKAN",
             &if snap.vulkan.icds.is_empty() {
                 "keine ICD gefunden".to_string()
             } else {
@@ -285,7 +312,7 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
         );
         ui::kv(
             ui,
-            "32-Bit",
+            "32-BIT",
             if snap.vulkan.lib32 {
                 "lib32-Vulkan vorhanden (Steam/Proton)"
             } else {
@@ -294,12 +321,12 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
         );
         ui::kv(
             ui,
-            "Multi-Monitor",
+            "MULTI-MONITOR",
             "Gamescope startet Spiele mit eigener Auflösung",
         );
         ui::kv(
             ui,
-            "Shader-Cache",
+            "SHADER-CACHE",
             if snap.settings.shader_cache.is_empty() {
                 "Standard"
             } else {

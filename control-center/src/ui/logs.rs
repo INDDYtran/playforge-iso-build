@@ -1,6 +1,6 @@
-//! Protokolle: journalctl-Auszüge des laufenden Boots.
+//! Protokolle: journalctl-Auszüge des laufenden Boots als Timeline.
 
-use eframe::egui::{self, Align, Color32, Layout, RichText};
+use eframe::egui::{self, Align, Color32, Layout};
 
 use crate::app::ControlCenter;
 use crate::system::LogMode;
@@ -12,9 +12,8 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
     let pending = cc.logs_pending();
     let mut reload = false;
 
-    ui::card(ui, "Protokoll", |ui| {
+    ui::panel_titled(ui, "Protokoll", "journalctl -b", |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Quelle").size(12.5).color(theme::MUTED));
             let mut mode = cc.log_mode;
             egui::ComboBox::from_id_salt("log-mode")
                 .width(230.0)
@@ -34,7 +33,7 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
                 reload = true;
             }
 
-            ui.add_space(8.0);
+            ui.add_space(4.0);
             ui.add(
                 egui::TextEdit::singleline(&mut cc.log_filter)
                     .hint_text("Filtern …")
@@ -42,7 +41,7 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
             );
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui::icon_button(ui, crate::icons::Icon::Refresh, "Neu laden", theme::AMBER)
+                if ui::icon_button(ui, crate::icons::Icon::Refresh, "Neu laden", theme::ACCENT)
                     .clicked()
                 {
                     reload = true;
@@ -55,15 +54,17 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
         });
 
         ui.add_space(12.0);
+        ui::hairline(ui);
+        ui.add_space(10.0);
 
         match &logs {
             None => {
                 if !pending {
-                    ui::hint(ui, "Protokoll wird geladen …");
+                    ui::mono_label(ui, "PROTOKOLL WIRD GELADEN …", theme::FAINT, 9.5);
                 }
             }
             Some(Err(error)) => {
-                ui::notice(ui, crate::icons::Icon::Warn, theme::AMBER, error);
+                ui::notice(ui, crate::icons::Icon::Warn, theme::WARN, error);
             }
             Some(Ok(text)) => {
                 let filter = cc.log_filter.to_lowercase();
@@ -73,59 +74,54 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
                     .collect();
 
                 ui.horizontal(|ui| {
-                    ui::hint(ui, &format!("{} Zeilen", filtered.len()));
+                    ui::mono_label(ui, &format!("{} ZEILEN", filtered.len()), theme::MUTED, 9.0);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui::badge(
                             ui,
                             &format!("{} · aktueller Boot", cc.log_mode.label()),
-                            theme::COPPER,
+                            theme::ACCENT,
                         );
                     });
                 });
-                ui.add_space(8.0);
+                ui.add_space(10.0);
+
+                let entries: Vec<ui::Entry> = filtered
+                    .iter()
+                    .map(|line| {
+                        let (time, rest) = split_journal_line(line);
+                        ui::Entry::new(time, rest, line_color(line)).mono()
+                    })
+                    .collect();
 
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(8, 6, 4))
-                    .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
-                    .corner_radius(egui::CornerRadius::same(9))
-                    .inner_margin(egui::Margin::same(12))
+                    .fill(theme::WELL)
+                    .stroke(egui::Stroke::new(1.0_f32, theme::HAIRLINE))
+                    .corner_radius(egui::CornerRadius::same(theme::INNER_RADIUS))
+                    .inner_margin(egui::Margin::symmetric(12, 10))
                     .show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
-                        egui::ScrollArea::both()
-                            .id_salt("journal-view")
-                            .max_height(430.0)
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                                for line in &filtered {
-                                    ui.label(
-                                        RichText::new(*line)
-                                            .monospace()
-                                            .size(11.5)
-                                            .color(line_color(line)),
-                                    );
-                                }
-                            });
+                        ui::timeline(ui, "journal", &entries);
                     });
             }
         }
     });
 
-    ui.add_space(12.0);
-    ui::card(ui, "Hinweis", |ui| {
+    ui.add_space(ui::GAP);
+
+    ui::panel_titled(ui, "Hinweis", "", |ui| {
         ui::kv(
             ui,
-            "journalctl",
+            "JOURNALCTL",
             "Die Anzeige nutzt journalctl -b des laufenden Boot-Vorgangs.",
         );
         ui::kv(
             ui,
-            "Rechte",
+            "RECHTE",
             "Eigene Dienste sind lesbar; systemweite Protokolle können eine Anmeldung verlangen.",
         );
         ui::kv(
             ui,
-            "Tipp",
+            "TIPP",
             "Für mehr Kontext: journalctl -b -u playforge-profile.service im Terminal.",
         );
     });
@@ -143,14 +139,30 @@ fn raw_text(logs: &Option<Result<String, String>>) -> String {
     }
 }
 
+/// Zerlegt `Nov 21 20:31:05 host unit: Meldung` in Zeit und Rest.
+fn split_journal_line(line: &str) -> (String, String) {
+    let mut parts = line.splitn(4, ' ');
+    let month = parts.next().unwrap_or("");
+    let day = parts.next().unwrap_or("");
+    let time = parts.next().unwrap_or("");
+    let rest = parts.next().unwrap_or("");
+
+    let looks_like_time = time.len() == 8 && time.matches(':').count() == 2;
+    if month.is_empty() || day.is_empty() || !looks_like_time || rest.is_empty() {
+        (String::new(), line.to_string())
+    } else {
+        (time.to_string(), rest.to_string())
+    }
+}
+
 fn line_color(line: &str) -> Color32 {
     let lower = line.to_lowercase();
     if lower.contains(" error") || lower.contains("failed") || lower.contains("panic") {
-        theme::RED
+        theme::ERROR
     } else if lower.contains("warn") || lower.contains("deprecated") {
-        theme::AMBER
+        theme::WARN
     } else if lower.contains(" ok") || lower.contains("playforge_live_ready") {
-        theme::GREEN
+        theme::OK
     } else {
         theme::MUTED
     }

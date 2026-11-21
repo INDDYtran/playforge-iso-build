@@ -303,6 +303,14 @@ Anwendungsmenü oder `playforge-control-center`.
   ein Konfigurator für `playforge-run`-Startoptionen
 - **Grafik** – GPUs mit Kernel-Treiber, Vulkan-ICDs, 32-Bit-Unterstützung,
   `vulkaninfo --summary` und `nvidia-smi`
+- **Feintuning** – CPU-Governor und Energy-Performance-Preference (dauerhaft
+  über `playforge-cpu-tune.service`), `vm.swappiness`,
+  `vm.vfs_cache_pressure`, `vm.max_map_count` und Inotify-Limits,
+  Datenträger-Scheduler per udev-Regel sowie `MESA_GLTHREAD`,
+  `AMD_VULKAN_ICD` und `RADV_PERFTEST`
+- **Updates** – pacman-, AUR- und Flatpak-Prüfung, `pacman -Syu` mit
+  Live-Ausgabe, optional Flatpak und reflector-Spiegel sowie ein
+  systemd-Timer für tägliche oder wöchentliche Automatik
 - **Dienste** – Start/Stopp und Autostart der Playforge-relevanten
   systemd-Units
 - **Diagnose** – `playforge-doctor` aufbereitet nach OK, Warnung und Fehler
@@ -312,6 +320,13 @@ Systemänderungen schreibt die App niemals selbst: Sie ruft
 `/usr/local/lib/playforge/control-helper.sh` über `pkexec` auf (auf dem
 Live-Medium über das passwortlose sudo von `gamer`). Der Helfer prüft Befehle
 und Werte gegen feste Listen; freie Pfade oder Unit-Namen nimmt er nicht an.
+Das Feintuning landet in `/etc/playforge/cpu.conf`,
+`/etc/sysctl.d/99-playforge-zz-tuning.conf`,
+`/etc/udev/rules.d/60-playforge-io-scheduler.rules` und
+`/etc/environment.d/90-playforge.conf`. Der Updater schreibt
+`/etc/playforge/updates.conf` sowie
+`/etc/systemd/system/playforge-autoupdate.{service,timer}` und merkt sich den
+letzten Lauf in `/var/lib/playforge/last-update`.
 
 Selbst bauen und testen:
 
@@ -351,6 +366,10 @@ playforge-run --gamescope --resolution 2560x1440 -- %command%
 | `/etc/udev/rules.d/60-playforge-gamepads.rules` | kein USB-Ruhezustand für gängige Controller |
 | `/etc/skel/.config/MangoHud/MangoHud.conf` | Standard-HUD (FPS, Frametime, Temperaturen) |
 | `/etc/skel/.config/gamemode.ini` | benutzerspezifische GameMode-Config |
+| `/etc/sysctl.d/99-playforge-zz-tuning.conf` | vom Control Center gesetzte Kernelwerte (überschreiben das Standard-Tuning) |
+| `/etc/playforge/cpu.conf` + `playforge-cpu-tune.service` | Governor/EPP beim Booten wiederherstellen |
+| `/etc/udev/rules.d/60-playforge-io-scheduler.rules` | Datenträger-Scheduler für SSD/NVMe |
+| `/etc/playforge/updates.conf` + `playforge-autoupdate.timer` | automatische System- und Flatpak-Updates |
 
 ## Projektstruktur
 

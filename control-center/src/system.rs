@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
+use std::time::{Duration, SystemTime};
 
 use crate::model::*;
 
@@ -440,6 +441,7 @@ fn collect_vulkan() -> VulkanInfo {
 }
 
 fn collect_tuning() -> TuningInfo {
+    let env = environment_values();
     TuningInfo {
         profile_saved: read_trim("/etc/playforge/profile")
             .unwrap_or_else(|| "balanced".to_string()),
@@ -452,9 +454,184 @@ fn collect_tuning() -> TuningInfo {
         power_profile: run("powerprofilesctl", &["get"]),
         max_map_count: read_u64("/proc/sys/vm/max_map_count"),
         swappiness: read_u64("/proc/sys/vm/swappiness"),
+        vfs_cache_pressure: read_u64("/proc/sys/vm/vfs_cache_pressure"),
         tcp_congestion: sysctl("net/ipv4/tcp_congestion_control"),
         inotify_watches: read_u64("/proc/sys/fs/inotify/max_user_watches"),
+        governors: sysfs_list("/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors"),
+        epps: sysfs_list(
+            "/sys/devices/system/cpu/cpu0/cpufreq/energy_performance_available_preferences",
+        ),
+        io_devices: collect_io_devices(),
+        graphics_env: GraphicsEnv {
+            mesa_glthread: env
+                .get("MESA_GLTHREAD")
+                .map(|value| value.eq_ignore_ascii_case("true")),
+            amd_icd: env
+                .get("AMD_VULKAN_ICD")
+                .filter(|value| !value.is_empty())
+                .cloned(),
+            radv_gpl: env
+                .get("RADV_PERFTEST")
+                .map(|value| value.split(',').any(|part| part.trim() == "gpl"))
+                .unwrap_or(false),
+        },
+        autoupdate: collect_autoupdate(),
     }
+}
+
+/// Liste aus einer Sysfs-Datei; der aktive Eintrag steht dort in `[...]`.
+fn sysfs_list(path: &str) -> Vec<String> {
+    read_trim(path)
+        .map(|text| {
+            text.split_whitespace()
+                .map(|value| value.trim_matches(|c| c == '[' || c == ']').to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn collect_io_devices() -> Vec<IoDevice> {
+    let mut devices = Vec::new();
+    let Ok(entries) = fs::read_dir("/sys/block") else {
+        return devices;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if ["loop", "ram", "zram", "dm-", "sr"]
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+        {
+            continue;
+        }
+        let Some(text) = read_trim(entry.path().join("queue/scheduler")) else {
+            continue;
+        };
+        let supported: Vec<String> = text
+            .split_whitespace()
+            .map(|value| value.trim_matches(|c| c == '[' || c == ']').to_string())
+            .collect();
+        let scheduler = text
+            .split_whitespace()
+            .find(|value| value.starts_with('['))
+            .map(|value| value.trim_matches(|c| c == '[' || c == ']').to_string())
+            .unwrap_or_default();
+        devices.push(IoDevice {
+            name,
+            scheduler,
+            supported,
+        });
+    }
+    devices.sort_by(|a, b| a.name.cmp(&b.name));
+    devices
+}
+
+fn environment_values() -> HashMap<String, String> {
+    let mut values = HashMap::new();
+    let Ok(text) = fs::read_to_string("/etc/environment.d/90-playforge.conf") else {
+        return values;
+    };
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            values.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+    values
+}
+
+fn collect_autoupdate() -> AutoUpdate {
+    let mode = fs::read_to_string("/etc/playforge/updates.conf")
+        .ok()
+        .and_then(|text| {
+            text.lines().find_map(|line| {
+                line.trim()
+                    .strip_prefix("MODE=")
+                    .map(|value| value.trim().to_string())
+            })
+        })
+        .filter(|mode| matches!(mode.as_str(), "daily" | "weekly"))
+        .unwrap_or_else(|| "off".to_string());
+
+    let timer_active = run("systemctl", &["is-active", "playforge-autoupdate.timer"])
+        .map(|out| out.trim() == "active")
+        .unwrap_or(false);
+
+    let last_update = read_u64("/var/lib/playforge/last-update")
+        .and_then(|secs| SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(secs)));
+
+    AutoUpdate {
+        mode,
+        timer_active,
+        last_update,
+    }
+}
+
+/// Prüft verfügbare Updates (ohne etwas zu installieren).
+pub fn collect_updates() -> UpdateReport {
+    let mut report = UpdateReport {
+        checked: Some(SystemTime::now()),
+        ..Default::default()
+    };
+
+    if !cfg!(target_os = "linux") {
+        report.error = Some(
+            "Updates lassen sich nur unter Playforge Linux prüfen – ohne pacman und flatpak \
+             bleibt die Seite leer."
+                .to_string(),
+        );
+        return report;
+    }
+
+    report.aur_helper = ["paru", "yay"]
+        .iter()
+        .find(|tool| have(tool))
+        .map(|tool| tool.to_string());
+
+    // `checkupdates` prüft gegen eine temporäre Datenbank, ohne `pacman -Sy`
+    // und damit ohne Risiko eines Teil-Upgrades.
+    let pacman = if have("checkupdates") {
+        run("checkupdates", &[])
+    } else {
+        run("pacman", &["-Qu"])
+    };
+    report.pacman = split_lines(pacman);
+
+    if let Some(helper) = &report.aur_helper {
+        report.aur = split_lines(run(helper, &["-Qua"]));
+    }
+
+    report.flatpak_available = have("flatpak");
+    if report.flatpak_available {
+        report.flatpak = run(
+            "flatpak",
+            &["remote-ls", "--updates", "--columns=application"],
+        )
+        .map(|out| out.lines().filter(|line| !line.trim().is_empty()).count())
+        .unwrap_or(0);
+    }
+
+    if !have("pacman") && report.aur.is_empty() && !report.flatpak_available {
+        report.error = Some(
+            "Weder pacman noch flatpak gefunden – es gibt auf diesem System nichts zu \
+             aktualisieren."
+                .to_string(),
+        );
+    }
+
+    report
+}
+
+fn split_lines(text: Option<String>) -> Vec<String> {
+    text.map(|out| {
+        out.lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
+            .collect()
+    })
+    .unwrap_or_default()
 }
 
 fn collect_packages() -> PackageInfo {
@@ -590,6 +767,12 @@ fn collect_settings() -> SettingsInfo {
             .unwrap_or(10),
         softrealtime: ini_value(&gamemode_text, "general", "softrealtime")
             .unwrap_or_else(|| "auto".to_string()),
+        inhibit_screensaver: ini_value(&gamemode_text, "general", "inhibit_screensaver")
+            .map(|value| value.trim() != "0")
+            .unwrap_or(true),
+        reaper_freq: ini_value(&gamemode_text, "general", "reaper_freq")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(5),
     };
 
     let mangohud_path = std::env::var("HOME")

@@ -111,9 +111,9 @@ impl GpuVendor {
         match self {
             GpuVendor::Nvidia => Color32::from_rgb(118, 185, 0),
             GpuVendor::Amd => Color32::from_rgb(237, 28, 36),
-            GpuVendor::Intel => theme::BLUE,
+            GpuVendor::Intel => theme::INFO,
             GpuVendor::Virtual => theme::MUTED,
-            GpuVendor::Other => theme::AMBER,
+            GpuVendor::Other => theme::ACCENT,
         }
     }
 }
@@ -134,6 +134,29 @@ pub struct VulkanInfo {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct IoDevice {
+    pub name: String,
+    /// Aktiver Scheduler, wie ihn der Kernel in eckigen Klammern meldet.
+    pub scheduler: String,
+    pub supported: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct GraphicsEnv {
+    pub mesa_glthread: Option<bool>,
+    pub amd_icd: Option<String>,
+    pub radv_gpl: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AutoUpdate {
+    /// `off`, `daily` oder `weekly`.
+    pub mode: String,
+    pub timer_active: bool,
+    pub last_update: Option<SystemTime>,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct TuningInfo {
     pub profile_saved: String,
     pub governor: String,
@@ -142,8 +165,14 @@ pub struct TuningInfo {
     pub power_profile: Option<String>,
     pub max_map_count: Option<u64>,
     pub swappiness: Option<u64>,
+    pub vfs_cache_pressure: Option<u64>,
     pub tcp_congestion: Option<String>,
     pub inotify_watches: Option<u64>,
+    pub governors: Vec<String>,
+    pub epps: Vec<String>,
+    pub io_devices: Vec<IoDevice>,
+    pub graphics_env: GraphicsEnv,
+    pub autoupdate: AutoUpdate,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -156,6 +185,17 @@ pub struct GamingInfo {
     pub goverlay: bool,
     pub wine: bool,
     pub lact: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct UpdateReport {
+    pub pacman: Vec<String>,
+    pub aur: Vec<String>,
+    pub aur_helper: Option<String>,
+    pub flatpak: usize,
+    pub flatpak_available: bool,
+    pub checked: Option<SystemTime>,
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -197,10 +237,10 @@ impl ServiceState {
 
     pub fn color(self) -> Color32 {
         match self {
-            ServiceState::Active => theme::GREEN,
+            ServiceState::Active => theme::OK,
             ServiceState::Inactive => theme::MUTED,
-            ServiceState::Failed => theme::RED,
-            ServiceState::Unknown => theme::AMBER,
+            ServiceState::Failed => theme::ERROR,
+            ServiceState::Unknown => theme::WARN,
         }
     }
 
@@ -243,6 +283,8 @@ pub struct GamemodeSettings {
     pub desired_gov: String,
     pub renice: u32,
     pub softrealtime: String,
+    pub inhibit_screensaver: bool,
+    pub reaper_freq: u32,
 }
 
 impl Default for GamemodeSettings {
@@ -251,6 +293,8 @@ impl Default for GamemodeSettings {
             desired_gov: "performance".to_string(),
             renice: 10,
             softrealtime: "auto".to_string(),
+            inhibit_screensaver: true,
+            reaper_freq: 5,
         }
     }
 }
@@ -307,10 +351,10 @@ pub fn percent(part: u64, total: u64) -> f32 {
 /// Wählt eine Farbe für einen Füllstand (grün → gelb → rot).
 pub fn load_color(fraction: f32) -> Color32 {
     if fraction >= 0.9 {
-        theme::RED
+        theme::ERROR
     } else if fraction >= 0.7 {
-        theme::AMBER
+        theme::WARN
     } else {
-        theme::GREEN
+        theme::OK
     }
 }

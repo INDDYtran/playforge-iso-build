@@ -1,7 +1,7 @@
 //! Leistung: Profile, Live-Tuning und Shader-Cache.
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, FontId, Layout, RichText, Sense, Stroke, StrokeKind, Vec2,
+    self, Align, Color32, CornerRadius, Layout, Rect, Sense, Stroke, StrokeKind, Vec2,
 };
 
 use crate::app::ControlCenter;
@@ -17,50 +17,30 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
 
     ui::helper_notice(cc, ui);
 
-    ui::card(ui, "Leistungsprofil", |ui| {
-        ui.label(
-            RichText::new(
-                "Das Profil wird in /etc/playforge/profile gespeichert und beim Booten von \
-                 playforge-profile.service angewendet.",
-            )
-            .size(12.5)
-            .color(theme::MUTED),
+    ui::panel_titled(ui, "Leistungsprofil", "/etc/playforge/profile", |ui| {
+        ui::hint(
+            ui,
+            "Das Profil wird beim Booten von playforge-profile.service angewendet.",
         );
         ui.add_space(12.0);
 
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 10.0;
-            let width = ((ui.available_width() - 20.0) / 3.0).max(150.0);
-            option(
-                ui,
-                cc,
-                width,
-                "performance",
-                "Leistung",
-                "Maximaler Takt, lauter",
-                theme::AMBER,
-            );
-            option(
-                ui,
-                cc,
-                width,
-                "balanced",
-                "Ausgewogen",
-                "Leise und sparsam",
-                theme::GREEN,
-            );
-            option(
-                ui,
-                cc,
-                width,
-                "reset",
-                "Zurücksetzen",
-                "Profil entfernen",
-                theme::MUTED,
-            );
+        ui::grid(ui, &[1.0, 1.0, 1.0], |ui, column| {
+            let (value, title, description, accent) = match column {
+                0 => (
+                    "performance",
+                    "Leistung",
+                    "Maximaler Takt, lauter",
+                    theme::ACCENT,
+                ),
+                1 => ("balanced", "Ausgewogen", "Leise und sparsam", theme::OK),
+                _ => ("reset", "Zurücksetzen", "Profil entfernen", theme::MUTED),
+            };
+            option(ui, cc, value, title, description, accent);
         });
 
         ui.add_space(14.0);
+        ui::hairline(ui);
+        ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.add_enabled_ui(!cc.action_pending(), |ui| {
                 if ui::primary(ui, "Profil anwenden").clicked() {
@@ -70,113 +50,133 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
             });
             if cc.action_pending() {
                 ui.spinner();
-                ui.label(
-                    RichText::new("Wird angewendet …")
-                        .size(12.0)
-                        .color(theme::MUTED),
-                );
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui::badge(
                     ui,
-                    &format!("gespeichert: {}", snap.tuning.profile_saved),
-                    theme::COPPER,
+                    &format!("Governor {}", snap.tuning.governor),
+                    theme::ACCENT,
                 );
                 ui::badge(
                     ui,
-                    &format!("Governor: {}", snap.tuning.governor),
-                    theme::AMBER,
+                    &format!("gespeichert: {}", snap.tuning.profile_saved),
+                    theme::MUTED,
                 );
             });
         });
     });
 
-    ui.add_space(14.0);
+    ui.add_space(ui::GAP);
 
-    ui::card(ui, "Live-Werte", |ui| {
-        ui::kv_grid(
-            ui,
-            &[
-                (
-                    "Power-Profile-Daemon",
-                    snap.tuning
-                        .power_profile
-                        .clone()
-                        .unwrap_or_else(|| "nicht installiert".to_string()),
-                ),
-                ("CPU-Governor", snap.tuning.governor.clone()),
-                ("Energy-Performance", snap.tuning.epp.clone()),
-                ("Platform-Profil", snap.tuning.platform_profile.clone()),
-                (
-                    "vm.max_map_count",
-                    snap.tuning
-                        .max_map_count
-                        .map(|value| value.to_string())
-                        .unwrap_or_else(|| "—".to_string()),
-                ),
-                (
-                    "vm.swappiness",
-                    snap.tuning
-                        .swappiness
-                        .map(|value| value.to_string())
-                        .unwrap_or_else(|| "—".to_string()),
-                ),
-                (
-                    "TCP-Kongestion",
-                    snap.tuning
-                        .tcp_congestion
-                        .clone()
-                        .unwrap_or_else(|| "—".to_string()),
-                ),
-                (
-                    "Inotify-Watches",
-                    snap.tuning
-                        .inotify_watches
-                        .map(|value| value.to_string())
-                        .unwrap_or_else(|| "—".to_string()),
-                ),
-            ],
-        );
-
-        ui.add_space(12.0);
-        let max_map = snap.tuning.max_map_count.unwrap_or(0);
-        ui::meter(
-            ui,
-            "Proton-Speicherlimit",
-            &format!("{max_map} von 2 147 483 642"),
-            (max_map as f32 / 2_147_483_642.0).clamp(0.0, 1.0),
-            load_color(1.0 - (max_map as f32 / 2_147_483_642.0).clamp(0.0, 1.0)),
-        );
-        ui.add_space(10.0);
-        ui::kv(
-            ui,
-            "zram",
-            if snap.mem.zram.is_empty() {
-                "nicht aktiv"
-            } else {
-                &snap.mem.zram
-            },
-        );
+    ui::grid(ui, &[1.0, 1.0], |ui, column| {
+        if column == 0 {
+            ui::panel_titled(ui, "Live-Werte", "sysctl", |ui| {
+                for (label, value) in [
+                    (
+                        "POWER-PROFILE",
+                        snap.tuning
+                            .power_profile
+                            .clone()
+                            .unwrap_or_else(|| "nicht installiert".to_string()),
+                    ),
+                    ("GOVERNOR", snap.tuning.governor.clone()),
+                    ("EPP", snap.tuning.epp.clone()),
+                    ("PLATFORM-PROFIL", snap.tuning.platform_profile.clone()),
+                    (
+                        "VM.MAX_MAP_COUNT",
+                        snap.tuning
+                            .max_map_count
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "—".to_string()),
+                    ),
+                    (
+                        "VM.SWAPPINESS",
+                        snap.tuning
+                            .swappiness
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "—".to_string()),
+                    ),
+                    (
+                        "TCP-KONGESTION",
+                        snap.tuning
+                            .tcp_congestion
+                            .clone()
+                            .unwrap_or_else(|| "—".to_string()),
+                    ),
+                    (
+                        "INOTIFY-WATCHES",
+                        snap.tuning
+                            .inotify_watches
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "—".to_string()),
+                    ),
+                ] {
+                    ui::kv(ui, label, &value);
+                }
+            });
+        } else {
+            ui::panel_titled(ui, "Proton-Speicherlimit", "vm.max_map_count", |ui| {
+                let max_map = snap.tuning.max_map_count.unwrap_or(0);
+                let fraction = (max_map as f32 / 2_147_483_642.0).clamp(0.0, 1.0);
+                ui::meter(
+                    ui,
+                    "LIMIT",
+                    &format!("{max_map} / 2 147 483 642"),
+                    fraction,
+                    load_color(1.0 - fraction),
+                );
+                ui.add_space(14.0);
+                ui::meter(
+                    ui,
+                    "RAM-AUSLASTUNG",
+                    &format!("{:.0} %", snap.mem.ram_fraction() * 100.0),
+                    snap.mem.ram_fraction(),
+                    load_color(snap.mem.ram_fraction()),
+                );
+                ui.add_space(14.0);
+                ui::meter(
+                    ui,
+                    "SWAP",
+                    &format!("{:.0} %", snap.mem.swap_fraction() * 100.0),
+                    snap.mem.swap_fraction(),
+                    theme::INFO,
+                );
+                ui.add_space(14.0);
+                ui::hairline(ui);
+                ui.add_space(10.0);
+                ui::kv(
+                    ui,
+                    "ZRAM",
+                    if snap.mem.zram.is_empty() {
+                        "nicht aktiv"
+                    } else {
+                        &snap.mem.zram
+                    },
+                );
+            });
+        }
     });
 
-    ui.add_space(14.0);
+    ui.add_space(ui::GAP);
 
-    ui::card(ui, "Shader-Cache", |ui| {
-        ui.label(
-            RichText::new(
-                "MESA_SHADER_CACHE_MAX_SIZE begrenzt den Shader-Cache in /etc/environment.d. \
-                 Ein größerer Cache vermeidet Nachladen bei Spielstarts.",
-            )
-            .size(12.5)
-            .color(theme::MUTED),
+    ui::panel_titled(ui, "Shader-Cache", "mesa_shader_cache_max_size", |ui| {
+        ui::hint(
+            ui,
+            "Begrenzt den Shader-Cache in /etc/environment.d. Ein größerer Cache \
+             vermeidet Nachladen bei Spielstarts.",
         );
-        ui.add_space(10.0);
+        ui.add_space(11.0);
         ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
             for size in ["4G", "8G", "12G", "16G", "32G"] {
-                ui.radio_value(&mut cc.shader_choice, size.to_string(), size);
+                if ui::choice(ui, cc.shader_choice == size, size).clicked() {
+                    cc.shader_choice = size.to_string();
+                }
             }
         });
-        ui.add_space(10.0);
+        ui.add_space(12.0);
+        ui::hairline(ui);
+        ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.add_enabled_ui(!cc.action_pending(), |ui| {
                 if ui::primary(ui, "Übernehmen").clicked() {
@@ -195,72 +195,86 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
                             &snap.settings.shader_cache
                         }
                     ),
-                    theme::AMBER,
+                    theme::ACCENT,
                 );
             });
         });
-        ui.add_space(8.0);
-        ui::hint(
-            ui,
-            "Wirkt nach der nächsten Anmeldung bzw. nach einem Neustart.",
-        );
+        ui.add_space(9.0);
+        ui::mono_label(ui, "WIRKT NACH DER NÄCHSTEN ANMELDUNG", theme::FAINT, 9.0);
     });
 }
 
 fn option(
     ui: &mut egui::Ui,
     cc: &mut ControlCenter,
-    width: f32,
     value: &str,
     title: &str,
     description: &str,
     accent: Color32,
 ) {
     let selected = cc.profile_choice == value;
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 84.0), Sense::click());
+    let height = 74.0;
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
     let painter = ui.painter();
+
     painter.rect_filled(
         rect,
-        CornerRadius::same(12),
+        CornerRadius::same(theme::INNER_RADIUS),
         if selected {
-            theme::SURFACE_HI
+            theme::alpha(accent, 16)
+        } else if response.hovered() {
+            theme::RAISED
         } else {
-            Color32::from_rgb(20, 16, 12)
+            theme::PANEL
         },
     );
     painter.rect_stroke(
         rect,
-        CornerRadius::same(12),
+        CornerRadius::same(theme::INNER_RADIUS),
         Stroke::new(
-            if selected { 2.0_f32 } else { 1.0_f32 },
-            if selected { accent } else { theme::BORDER },
+            1.0_f32,
+            if selected {
+                theme::alpha(accent, 170)
+            } else {
+                theme::HAIRLINE
+            },
         ),
         StrokeKind::Inside,
     );
 
-    let dot = rect.left_top() + Vec2::new(20.0, 24.0);
-    painter.circle_stroke(
-        dot,
-        6.0,
-        Stroke::new(1.5_f32, if selected { accent } else { theme::MUTED }),
-    );
+    let square = Rect::from_min_size(rect.left_top() + Vec2::new(14.0, 16.0), Vec2::splat(7.0));
     if selected {
-        painter.circle_filled(dot, 3.0, accent);
+        painter.rect_filled(square, CornerRadius::same(1), accent);
+    } else {
+        painter.rect_stroke(
+            square,
+            CornerRadius::same(1),
+            Stroke::new(1.0_f32, theme::FAINT),
+            StrokeKind::Inside,
+        );
     }
 
     painter.text(
-        rect.left_top() + Vec2::new(36.0, 17.0),
+        rect.left_top() + Vec2::new(30.0, 10.0),
         egui::Align2::LEFT_TOP,
         title,
-        FontId::proportional(14.5),
-        theme::TEXT,
+        theme::sans(13.0),
+        if selected { theme::TEXT } else { theme::MUTED },
     );
     painter.text(
-        rect.left_top() + Vec2::new(36.0, 41.0),
+        rect.left_top() + Vec2::new(30.0, 31.0),
         egui::Align2::LEFT_TOP,
         description,
-        FontId::proportional(11.5),
-        theme::MUTED,
+        theme::mono(9.0),
+        theme::FAINT,
+    );
+    painter.text(
+        rect.left_top() + Vec2::new(30.0, 48.0),
+        egui::Align2::LEFT_TOP,
+        value.to_string(),
+        theme::mono(9.0),
+        if selected { accent } else { theme::FAINT },
     );
 
     if response.hovered() {

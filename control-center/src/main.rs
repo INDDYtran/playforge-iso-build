@@ -15,8 +15,8 @@ use eframe::egui;
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1200.0, 840.0])
-            .with_min_inner_size([940.0, 640.0])
+            .with_inner_size([1300.0, 880.0])
+            .with_min_inner_size([1020.0, 680.0])
             .with_app_id("org.playforge.controlcenter"),
         ..Default::default()
     };
