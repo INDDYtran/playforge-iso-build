@@ -9,6 +9,18 @@ if [[ -z "${SOURCE_DATE_EPOCH:-}" || ! "${SOURCE_DATE_EPOCH}" =~ ^[0-9]+$ ]]; th
     exit 1
 fi
 
+# Update-Paket statt ISO: nur Control Center bauen und das Release-Archiv
+# schnüren. Wird von .github/workflows/publish-update.yml genutzt.
+if [[ "${PLAYFORGE_JOB:-iso}" == "payload" ]]; then
+    printf '\n==> Playforge Systemupdate paketieren\n'
+    printf '    Version:          %s\n' "${PLAYFORGE_VERSION:-unbekannt}"
+    printf '    SOURCE_DATE_EPOCH: %s\n\n' "${SOURCE_DATE_EPOCH}"
+
+    bash scripts/build-control-center.sh
+    bash scripts/pack-update.sh
+    exit 0
+fi
+
 printf '\n==> Playforge ISO-Build im Container\n'
 printf '    archiso:          %s\n' "$(pacman -Q archiso)"
 printf '    Basis-Image:      %s\n' "${PLAYFORGE_BASE_IMAGE:-unbekannt}"

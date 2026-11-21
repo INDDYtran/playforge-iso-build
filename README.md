@@ -20,7 +20,7 @@ abgestimmtes Paket- und Konfigurationsset mit.
 - **Tuning:** Sysctl-Profil, zram, GameMode-Konfiguration, MangoHud-Standardprofil,
   Shader-Cache-Limit, Gamecontroller-udev-Regeln, Leistungsprofile
 - **Werkzeuge:** `playforge-install`, `playforge-doctor`, `playforge-tweaks`,
-  `playforge-run`, `playforge-control-center`
+  `playforge-run`, `playforge-update`, `playforge-control-center`
 
 ## Voraussetzungen für den Build
 
@@ -267,6 +267,46 @@ sudo playforge-tweaks reset           # Profil entfernen
 Das Profil wird in `/etc/playforge/profile` gespeichert und beim Booten von
 `playforge-profile.service` angewendet.
 
+### Systemupdate ohne neues ISO
+
+`playforge-update` holt die Playforge-Systemdateien – Skripte, Theme,
+Konfiguration und das Control Center – aus einem GitHub-Release und ersetzt
+nur diese Dateien. Kernel, Pakete, Bootloader und Benutzerdaten bleiben
+unangetastet; es wird also kein neues ISO gebraucht.
+
+```bash
+playforge-update --check      # gibt es etwas Neues? (Exit 10 = ja)
+sudo playforge-update         # anwenden
+sudo playforge-update --dry-run   # zeigen, was getauscht würde
+sudo playforge-update --rollback  # letzte Sicherung zurückholen
+```
+
+Ablauf: Das Skript liest `playforge-update.version` aus dem Release
+`system-update` (`releases/latest` von `INDDYtran/playforge-iso-build`),
+vergleicht sie mit `/etc/playforge/version`, lädt `playforge-update.tar.gz`
+samt Prüfsumme, prüft **jede** Datei gegen das mitgelieferte Manifest und
+schreibt erst dann. Vorher sichert es die betroffenen Dateien samt Rechten
+unter `/var/lib/playforge/backups` (die letzten drei Stände). Dateien, die aus
+dem Projekt verschwunden sind, werden entfernt.
+
+Geschrieben wird nur innerhalb fester Bereiche (`/usr/local/bin`,
+`/usr/local/lib/playforge`, `/usr/local/share/playforge`, die
+Playforge-Dateien unter `/usr/share`, `/etc/…`). Alles andere lehnt der
+Updater ab. Quelle und Ziel lassen sich für Tests umlenken:
+
+```bash
+PLAYFORGE_UPDATE_REPO=owner/repo
+PLAYFORGE_UPDATE_BASE=file:///tmp/release
+PLAYFORGE_UPDATE_ROOT=/tmp/testwurzel
+```
+
+Veröffentlicht wird das Update von `.github/workflows/publish-update.yml`:
+bei Änderungen an `overlay/` oder `control-center/` und manuell über
+"Run workflow". Der Lauf baut das Control Center im Builder-Container, packt
+Overlay und Binary zu `playforge-update.tar.gz` (mit `manifest.tsv`) und lädt
+Archiv, Prüfsumme und Version in das Release `system-update`. Paketupdates
+(pacman, Flatpak) macht dieses Werkzeug bewusst nicht.
+
 ### Playforge-Theme
 
 Live-System und installiertes System verwenden das globale KDE-Theme
@@ -381,6 +421,7 @@ Dockerfile                   Gepinnter Arch-Builder-Container
 scripts/
   build-iso-container.sh     Lokaler Docker-/Podman-Build
   build-control-center.sh    Control Center (Rust) lokal bauen
+  pack-update.sh             Systemupdate-Archiv für das GitHub-Release bauen
   container-entrypoint.sh    Build, Verify, Boot-Test und BUILD-INFO im Container
   verify-iso.sh              BIOS-/UEFI-/Kernel-/SquashFS-Prüfung
   boot-smoke-test.sh         QEMU/OVMF-Boottest mit serieller Konsole

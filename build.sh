@@ -75,6 +75,19 @@ install -d "$profile_dir/airootfs/usr/local/share/playforge/overlay"
 cp -a "$repo_dir/overlay/." "$profile_dir/airootfs/usr/local/share/playforge/overlay/"
 install -m 0644 "$repo_dir/overlay/etc/pacman.conf" "$profile_dir/pacman.conf"
 
+# Versionskennung mit auf das Medium nehmen, damit playforge-update nach der
+# Installation weiß, welcher Stand läuft. Im Container kommt sie aus der
+# Umgebung (dort gibt es kein .git), lokal aus dem Commit.
+playforge_version="${PLAYFORGE_VERSION:-}"
+if [[ -z "$playforge_version" ]]; then
+    playforge_version="$(git -C "$repo_dir" rev-parse --short=12 HEAD 2>/dev/null || true)"
+fi
+playforge_version="${playforge_version:-unbekannt}"
+overlay_root="$profile_dir/airootfs/usr/local/share/playforge/overlay"
+install -d "$overlay_root/etc/playforge"
+printf '%s\n' "$playforge_version" >"$overlay_root/etc/playforge/version"
+chmod 0644 "$overlay_root/etc/playforge/version"
+
 msg "Baue Control Center (Rust)"
 cc_dir="$repo_dir/control-center"
 if command -v cargo >/dev/null 2>&1; then

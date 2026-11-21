@@ -1,0 +1,122 @@
+name: Playforge System-Update
+
+# Baut nur die Playforge-Systemdateien (Overlay + Control Center) und
+# veröffentlicht sie als Release-Assets. Installierte Systeme holen sie mit
+# `sudo playforge-update` – ohne neues ISO.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "overlay/**"
+      - "control-center/**"
+      - "scripts/pack-update.sh"
+      - "scripts/build-control-center.sh"
+      - "scripts/container-entrypoint.sh"
+      - ".github/workflows/publish-update.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: playforge-update
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Update paketieren und veröffentlichen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Parameter bestimmen
+        id: params
+        run: |
+          set -Eeuo pipefail
+          epoch="$(git log -1 --format=%ct)"
+          sha="$(git rev-parse --short=12 HEAD)"
+          echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Systemupdate \`$sha\`"
+            echo ""
+            echo "Quellstand: \`$(git rev-parse HEAD)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Builder-Image bauen
+        env:
+          EPOCH: ${{ steps.params.outputs.epoch }}
+        run: |
+          set -Eeuo pipefail
+          base_image="${{ vars.PLAYFORGE_BASE_IMAGE }}"
+          base_image="${base_image:-archlinux/archlinux@sha256:66876082fe42b95d8778e581395b4f4e73d7043491470276bb3aa5a1f2009b5b}"
+          docker build \
+            --platform linux/amd64 \
+            --build-arg "BASE_IMAGE=$base_image" \
+            --build-arg "SOURCE_DATE_EPOCH=$EPOCH" \
+            -t playforge-builder .
+
+      - name: Update-Archiv bauen
+        env:
+          EPOCH: ${{ steps.params.outputs.epoch }}
+          SHA: ${{ steps.params.outputs.sha }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p out
+          docker run --rm \
+            --platform linux/amd64 \
+            -e "SOURCE_DATE_EPOCH=$EPOCH" \
+            -e "PLAYFORGE_JOB=payload" \
+            -e "PLAYFORGE_VERSION=$SHA" \
+            -v "$PWD/out:/build/out" \
+            playforge-builder
+
+      - name: Ergebnis prüfen
+        env:
+          SHA: ${{ steps.params.outputs.sha }}
+        run: |
+          set -Eeuo pipefail
+          ls -lh out/playforge-update.*
+          (
+            cd out
+            sha256sum -c playforge-update.tar.gz.sha256
+          )
+          version="$(cat out/playforge-update.version)"
+          [[ "$version" == "$SHA" ]] || {
+            echo "Version im Update ($version) weicht vom Commit ($SHA) ab." >&2
+            exit 1
+          }
+          tar -tzf out/playforge-update.tar.gz | head -5
+          {
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Version | \`$version\` |"
+            echo "| Archivgroesse | \`$(du -h out/playforge-update.tar.gz | cut -f1)\` |"
+            echo "| Dateien | \`$(tar -xzOf out/playforge-update.tar.gz manifest.tsv | wc -l)\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Release aktualisieren
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          tag="system-update"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --title "Playforge System-Update" \
+              --notes "Systemdateien für \`playforge-update\`: Overlay, Theme, Konfiguration und Control Center. Kernel, Pakete und Bootloader werden nicht verändert." \
+              --latest
+          fi
+          gh release upload "$tag" \
+            out/playforge-update.tar.gz \
+            out/playforge-update.tar.gz.sha256 \
+            out/playforge-update.version \
+            --clobber
+          gh release edit "$tag" --latest
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Veröffentlicht: https://github.com/${{ github.repository }}/releases/tag/$tag" >> "$GITHUB_STEP_SUMMARY"

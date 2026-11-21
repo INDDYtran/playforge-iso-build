@@ -91,6 +91,8 @@ RUN set -eux; \
         /build/scripts/container-entrypoint.sh \
         /build/scripts/verify-iso.sh \
         /build/scripts/boot-smoke-test.sh \
+        /build/scripts/pack-update.sh \
+        /build/overlay/usr/local/bin/playforge-update \
         /build/overlay/usr/local/lib/playforge/control-helper.sh \
         /build/profile/airootfs/usr/local/lib/playforge/live-setup; do \
         bash -n "$script"; \

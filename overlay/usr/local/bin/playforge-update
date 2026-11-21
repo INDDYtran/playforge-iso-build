@@ -1,0 +1,400 @@
+#!/usr/bin/env bash
+# Playforge – Systemupdate ohne neues ISO.
+#
+# Holt Overlay-Dateien (Skripte, Theme, Konfiguration) und das Control Center
+# aus einem GitHub-Release und ersetzt ausschließlich diese Dateien. Kernel,
+# Pakete, Bootloader und Benutzerdaten bleiben unangetastet.
+#
+#   playforge-update --check     Nachsehen, ob es etwas Neues gibt
+#   sudo playforge-update        Installieren
+#   sudo playforge-update --dry-run
+#   sudo playforge-update --rollback
+#
+# Für Tests lassen sich Quelle und Zielwurzel umlenken:
+#   PLAYFORGE_UPDATE_BASE=file:///tmp/release
+#   PLAYFORGE_UPDATE_ROOT=/tmp/testwurzel
+set -Eeuo pipefail
+
+repo="${PLAYFORGE_UPDATE_REPO:-INDDYtran/playforge-iso-build}"
+base="${PLAYFORGE_UPDATE_BASE:-https://github.com/${repo}/releases/latest/download}"
+root="${PLAYFORGE_UPDATE_ROOT:-}"
+
+state_dir="$root/var/lib/playforge"
+version_file="$root/etc/playforge/version"
+manifest_file="$state_dir/manifest.tsv"
+backup_dir="$state_dir/backups"
+keep_backups=3
+
+# Nur diese Bereiche darf ein Update schreiben – genau das, was Playforge in
+# overlay/ mitbringt. Alles andere wird abgelehnt. scripts/pack-update.sh liest
+# diese Liste, damit nie ein Archiv entsteht, das der Updater ablehnt.
+allowed_prefixes=(
+    # Programme, Bibliotheken und gemeinsame Daten
+    "usr/local/bin/"
+    "usr/local/lib/playforge/"
+    "usr/local/share/playforge/"
+    # Theme, Icons, Wallpaper, Menüeintrag
+    "usr/share/applications/"
+    "usr/share/color-schemes/"
+    "usr/share/icons/Playforge/"
+    "usr/share/icons/hicolor/scalable/apps/"
+    "usr/share/pixmaps/"
+    "usr/share/plasma/look-and-feel/org.playforge.desktop/"
+    "usr/share/wallpapers/Playforge/"
+    # Systemkonfiguration, die Playforge selbst mitbringt
+    "etc/environment.d/"
+    "etc/gamemode.ini"
+    "etc/modules-load.d/"
+    "etc/security/limits.d/"
+    "etc/skel/.config/"
+    "etc/sysctl.d/"
+    "etc/systemd/system/playforge-"
+    "etc/systemd/zram-generator.conf"
+    "etc/udev/rules.d/"
+    "etc/xdg/"
+    # Versionskennung
+    "etc/playforge/"
+)
+
+action="apply"
+dry_run=0
+force=0
+tmp_dir=""
+
+cleanup() {
+    if [[ -n "$tmp_dir" && -d "$tmp_dir" ]]; then
+        rm -rf -- "$tmp_dir"
+    fi
+}
+trap cleanup EXIT
+
+die() {
+    printf 'Fehler: %s\n' "$*" >&2
+    exit 1
+}
+info() { printf '%s\n' "$*"; }
+detail() { printf '  %-14s %s\n' "$1" "$2"; }
+step() { printf '\n==> %s\n' "$*"; }
+
+usage() {
+    cat <<'EOF'
+Nutzung: playforge-update [Option]
+
+Aktualisiert die Playforge-Systemdateien (Skripte, Theme, Konfiguration und
+Control Center) aus dem GitHub-Release des Projekts. Kernel, Pakete und
+Bootloader werden nicht verändert.
+
+Optionen:
+  --check      nur nachsehen, ob ein Update bereitsteht (Exit 10 = ja)
+  --dry-run    zeigen, was getauscht würde – ohne zu schreiben
+  --apply      Update installieren (Standard, benötigt root)
+  --rollback   letzte Sicherung zurückspielen (benötigt root)
+  --force      auch installieren, wenn die Version gleich ist
+  -h, --help   diese Hilfe
+
+Umgebung:
+  PLAYFORGE_UPDATE_REPO   owner/repo der Quelle (Standard: INDDYtran/playforge-iso-build)
+  PLAYFORGE_UPDATE_BASE   abweichende Download-Basis (Datei-URL oder Mirror)
+  PLAYFORGE_UPDATE_ROOT   Zielwurzel, nur für Tests
+
+Version: playforge-update 1.0
+EOF
+}
+
+while (( $# > 0 )); do
+    case "$1" in
+        --check) action="check" ;;
+        --apply) action="apply" ;;
+        --dry-run) action="apply"; dry_run=1 ;;
+        --rollback) action="rollback" ;;
+        --force) force=1 ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *) die "Unbekannte Option: $1 (siehe --help)" ;;
+    esac
+    shift
+done
+
+local_version() {
+    if [[ -f "$version_file" ]]; then
+        head -n1 "$version_file" | tr -d '[:blank:]'
+    fi
+}
+
+remote_version() {
+    curl -fsSL --retry 3 --retry-delay 2 --max-time 30 \
+        "$base/playforge-update.version" 2>/dev/null | head -n1 | tr -d '[:blank:]' || true
+}
+
+require_root() {
+    [[ -n "$root" ]] && return 0
+    if (( EUID != 0 )); then
+        die "Bitte mit Administratorrechten ausführen: sudo playforge-update"
+    fi
+}
+
+path_allowed() {
+    local rel="$1" prefix
+    if [[ "$rel" == /* || "$rel" == *..* ]]; then
+        return 1
+    fi
+    for prefix in "${allowed_prefixes[@]}"; do
+        if [[ "$rel" == "$prefix"* ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# ---------------------------------------------------------------- Rollback
+
+do_rollback() {
+    require_root
+    [[ -d "$backup_dir" ]] || die "Keine Sicherung unter $backup_dir vorhanden."
+
+    local latest
+    latest="$(find "$backup_dir" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
+        | sort -n | tail -n1 | cut -d' ' -f2-)"
+    [[ -n "$latest" && -d "$latest" ]] || die "Keine Sicherung vorhanden."
+
+    local restored=0 removed=0
+    # Pfade des alten Stands als Menge – ein Zeilenvergleich würde an den
+    # Prüfsummen und Rechten im Manifest scheitern.
+    declare -A old_paths=()
+    if [[ -f "$latest/manifest.tsv" ]]; then
+        while IFS=$'\t' read -r _sum _mode rel; do
+            if [[ -n "$rel" ]]; then
+                old_paths["$rel"]=1
+            fi
+        done <"$latest/manifest.tsv"
+    fi
+
+    if [[ -d "$latest/files" ]]; then
+        while IFS= read -r rel; do
+            [[ -n "$rel" ]] || continue
+            mkdir -p -- "$(dirname -- "$root/$rel")"
+            cp -a -- "$latest/files/$rel" "$root/$rel"
+            restored=$((restored + 1))
+        done < <(cd "$latest/files" && find . -type f -printf '%P\n' | LC_ALL=C sort)
+    fi
+
+    # Dateien löschen, die erst das zurückgenommene Update eingeführt hat.
+    if [[ -f "$manifest_file" ]]; then
+        while IFS=$'\t' read -r _sum _mode rel; do
+            [[ -n "$rel" ]] || continue
+            if [[ -z "${old_paths[$rel]+x}" && -f "$root/$rel" ]]; then
+                rm -f -- "$root/$rel"
+                removed=$((removed + 1))
+            fi
+        done <"$manifest_file"
+    fi
+    if [[ -f "$latest/manifest.tsv" ]]; then
+        install -Dm0644 -- "$latest/manifest.tsv" "$manifest_file"
+    fi
+
+    if [[ -f "$latest/version" ]]; then
+        install -Dm0644 -- "$latest/version" "$version_file"
+    else
+        rm -f -- "$version_file"
+    fi
+
+    reload_units
+
+    printed="$(local_version || true)"
+    printf '\n==> Zurückgerollt auf %s\n' "${printed:-unbekannt}"
+    detail "Dateien" "$restored wiederhergestellt, $removed entfernt"
+    detail "Sicherung" "$latest (verbraucht)"
+    rm -rf -- "$latest"
+    info ""
+    info "Control Center neu starten, damit das alte Binary wieder greift."
+}
+
+reload_units() {
+    if [[ -z "$root" ]] && command -v systemctl >/dev/null 2>&1; then
+        systemctl daemon-reload 2>/dev/null || true
+    fi
+}
+
+# ---------------------------------------------------------------- Update
+
+do_update() {
+    local current remote
+    current="$(local_version || true)"
+    [[ -n "$current" ]] || current="unbekannt"
+
+    step "Playforge Systemupdate"
+    detail "Quelle" "$base"
+    detail "Installiert" "$current"
+
+    remote="$(remote_version || true)"
+    if [[ -z "$remote" ]]; then
+        die "Kein Update gefunden. Gibt es das Release 'system-update' in $repo?"
+    fi
+    detail "Verfügbar" "$remote"
+
+    if [[ "$remote" == "$current" ]] && (( force == 0 )); then
+        info ""
+        info "Das System ist bereits aktuell."
+        exit 0
+    fi
+
+    if [[ "$action" == "check" ]]; then
+        info ""
+        info "Update verfügbar: $current -> $remote"
+        exit 10
+    fi
+
+    local dir="$state_dir"
+    mkdir -p -- "$dir"
+
+    if (( dry_run == 0 )); then
+        require_root
+    fi
+
+    tmp_dir="$(mktemp -d)"
+    step "Lade Update"
+    curl -fsSL --retry 3 --retry-delay 2 --max-time 300 \
+        -o "$tmp_dir/update.tar.gz" "$base/playforge-update.tar.gz"
+    curl -fsSL --retry 3 --retry-delay 2 --max-time 60 \
+        -o "$tmp_dir/update.tar.gz.sha256" "$base/playforge-update.tar.gz.sha256"
+
+    local expected actual
+    expected="$(cut -d' ' -f1 "$tmp_dir/update.tar.gz.sha256")"
+    actual="$(sha256sum "$tmp_dir/update.tar.gz" | cut -d' ' -f1)"
+    if [[ "$expected" != "$actual" ]]; then
+        die "Prüfsumme des Archivs stimmt nicht (erwartet $expected, erhalten $actual)."
+    fi
+    detail "Archiv" "$(du -h "$tmp_dir/update.tar.gz" | cut -f1), Prüfsumme OK"
+
+    tar -xzf "$tmp_dir/update.tar.gz" -C "$tmp_dir"
+    [[ -f "$tmp_dir/manifest.tsv" ]] || die "Manifest fehlt im Archiv."
+    [[ -d "$tmp_dir/payload" ]] || die "Nutzdaten fehlen im Archiv."
+
+    # 1. Manifest vollständig prüfen, bevor irgendetwas angefasst wird.
+    declare -A new_sum=() new_mode=()
+    local rel sum mode got count=0
+    while IFS=$'\t' read -r sum mode rel; do
+        [[ -n "$rel" ]] || continue
+        path_allowed "$rel" || die "Pfad außerhalb der erlaubten Bereiche: $rel"
+        [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || die "Ungültige Prüfsumme für $rel"
+        [[ "$mode" =~ ^[0-7]{3,4}$ ]] || die "Ungültiger Dateimodus für $rel"
+        [[ -f "$tmp_dir/payload/$rel" ]] || die "Datei fehlt im Archiv: $rel"
+        got="$(sha256sum "$tmp_dir/payload/$rel" | cut -d' ' -f1)"
+        [[ "$got" == "$sum" ]] || die "Prüfsumme weicht ab: $rel"
+        new_sum["$rel"]="$sum"
+        new_mode["$rel"]="$mode"
+        count=$((count + 1))
+    done < "$tmp_dir/manifest.tsv"
+    (( count > 0 )) || die "Manifest ist leer."
+
+    # 2. Änderungen bestimmen.
+    local added=() updated=() unchanged=0
+    for rel in "${!new_sum[@]}"; do
+        if [[ -f "$root/$rel" ]]; then
+            if [[ "$(sha256sum "$root/$rel" | cut -d' ' -f1)" == "${new_sum[$rel]}" ]]; then
+                unchanged=$((unchanged + 1))
+                continue
+            fi
+            updated+=("$rel")
+        else
+            added+=("$rel")
+        fi
+    done
+
+    local removed_list=()
+    if [[ -f "$manifest_file" ]]; then
+        while IFS=$'\t' read -r _sum _mode rel; do
+            [[ -n "$rel" ]] || continue
+            if [[ -z "${new_sum[$rel]+x}" && -f "$root/$rel" ]]; then
+                removed_list+=("$rel")
+            fi
+        done < "$manifest_file"
+    fi
+
+    printf '\n   %s Dateien im Update, %s neu, %s geändert, %s unverändert' \
+        "$count" "${#added[@]}" "${#updated[@]}" "$unchanged"
+    if (( ${#removed_list[@]} > 0 )); then
+        printf ', %s entfallen' "${#removed_list[@]}"
+    fi
+    printf '\n'
+
+    if (( ${#added[@]} == 0 && ${#updated[@]} == 0 && ${#removed_list[@]} == 0 )); then
+        info ""
+        info "Inhaltlich ist alles schon auf dem Stand von $remote."
+        if (( dry_run == 0 )); then
+            install -Dm0644 -- "$tmp_dir/manifest.tsv" "$manifest_file"
+            printf '%s\n' "$remote" >"$version_file"
+        fi
+        exit 0
+    fi
+
+    if (( dry_run == 1 )); then
+        info ""
+        info "Probelauf – es wurde nichts geschrieben:"
+        for rel in "${added[@]}"; do info "  + $rel"; done
+        for rel in "${updated[@]}"; do info "  ~ $rel"; done
+        for rel in "${removed_list[@]}"; do info "  - $rel"; done
+        exit 0
+    fi
+
+    # 3. Sicherung der betroffenen Dateien (inklusive Rechte).
+    local stamp backup
+    stamp="$(date -u +%Y%m%d-%H%M%S)"
+    backup="$backup_dir/${stamp}-${current}"
+    mkdir -p -- "$backup/files"
+    # Auch Dateien sichern, die das Update gleich entfernt – nur so kann ein
+    # Rollback den vorherigen Stand vollständig wiederherstellen.
+    for rel in "${updated[@]}" "${removed_list[@]}"; do
+        mkdir -p -- "$(dirname -- "$backup/files/$rel")"
+        cp -a -- "$root/$rel" "$backup/files/$rel"
+    done
+    if [[ -f "$manifest_file" ]]; then
+        cp -a -- "$manifest_file" "$backup/manifest.tsv"
+    fi
+    if [[ -f "$version_file" ]]; then
+        cp -a -- "$version_file" "$backup/version"
+    fi
+
+    # 4. Installieren.
+    step "Schreibe Dateien"
+    for rel in "${added[@]}" "${updated[@]}"; do
+        install -Dm"${new_mode[$rel]}" -- "$tmp_dir/payload/$rel" "$root/$rel"
+    done
+    for rel in "${removed_list[@]}"; do
+        rm -f -- "$root/$rel"
+    done
+
+    # 5. Zustand festhalten.
+    install -Dm0644 -- "$tmp_dir/manifest.tsv" "$manifest_file"
+    mkdir -p -- "$(dirname -- "$version_file")"
+    printf '%s\n' "$remote" >"$version_file"
+    reload_units
+
+    # 6. Alte Sicherungen aufräumen.
+    local prune
+    prune="$(find "$backup_dir" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
+        | sort -n | cut -d' ' -f2- | head -n "-${keep_backups}")"
+    if [[ -n "$prune" ]]; then
+        while IFS= read -r old; do
+            if [[ -n "$old" ]]; then
+                rm -rf -- "$old"
+            fi
+        done <<<"$prune"
+    fi
+
+    printf '\n==> Fertig: %s -> %s\n' "$current" "$remote"
+    detail "Neu" "${#added[@]}"
+    detail "Geändert" "${#updated[@]}"
+    detail "Entfernt" "${#removed_list[@]}"
+    detail "Sicherung" "$backup"
+    info ""
+    info "Hinweis: Control Center neu starten. Kernel- und Paketupdates macht"
+    info "dieses Werkzeug nicht – dafür 'sudo pacman -Syu'."
+}
+
+case "$action" in
+    rollback) do_rollback ;;
+    *) do_update ;;
+esac

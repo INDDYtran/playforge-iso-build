@@ -140,6 +140,7 @@ jobs:
             --platform linux/amd64 \
             -e "SOURCE_DATE_EPOCH=$EPOCH" \
             -e "ARCHIVE_DATE=$ARCHIVE_DATE" \
+            -e "PLAYFORGE_VERSION=${{ steps.params.outputs.sha }}" \
             -v "$PWD/out:/build/out" \
             -v "$PWD/.cache/pacman:/var/cache/pacman/pkg" \
             playforge-builder
