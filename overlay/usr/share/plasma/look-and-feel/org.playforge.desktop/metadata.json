@@ -7,9 +7,9 @@
       }
     ],
     "Category": "Global Themes",
-    "Description": "Dunkles Gaming-Theme mit Cyan- und Violett-Akzenten, Playforge-Wallpaper und eigenem Splashscreen.",
-    "Description[de]": "Dunkles Gaming-Theme mit Cyan- und Violett-Akzenten, Playforge-Wallpaper und eigenem Splashscreen.",
-    "Description[en]": "Dark gaming theme with cyan and violet accents, Playforge wallpaper and a custom splash screen.",
+    "Description": "Dunkles Gaming-Theme mit warmen Bernstein-Akzenten auf Eisenbasis, Playforge-Wallpaper und eigenem Splashscreen.",
+    "Description[de]": "Dunkles Gaming-Theme mit warmen Bernstein-Akzenten auf Eisenbasis, Playforge-Wallpaper und eigenem Splashscreen.",
+    "Description[en]": "Dark gaming theme with warm amber accents on an iron base, Playforge wallpaper and a custom splash screen.",
     "Id": "org.playforge.desktop",
     "License": "GPL-2.0-or-later",
     "Name": "Playforge",

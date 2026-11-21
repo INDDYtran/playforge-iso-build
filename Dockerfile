@@ -40,7 +40,8 @@ RUN set -eux; \
         printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf; \
     fi; \
     pacman -Syy --noconfirm; \
-    pacman -S --needed --noconfirm archiso qemu-system-x86 edk2-ovmf; \
+    pacman -S --needed --noconfirm archiso qemu-system-x86 edk2-ovmf \
+        rust gcc pkgconf wayland libxkbcommon libx11 libxcursor libxrandr libxi; \
     pacman -Scc --noconfirm; \
     pacman -Syy --noconfirm
 
@@ -61,6 +62,7 @@ RUN set -eux; \
         /build/scripts/container-entrypoint.sh \
         /build/scripts/verify-iso.sh \
         /build/scripts/boot-smoke-test.sh \
+        /build/overlay/usr/local/lib/playforge/control-helper.sh \
         /build/profile/airootfs/usr/local/lib/playforge/live-setup; do \
         bash -n "$script"; \
     done

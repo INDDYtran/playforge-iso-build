@@ -2,5 +2,6 @@
 /out/
 /.pkgcheck/
 /.cache/
+/control-center/target/
 *.iso
 *.iso.sha256

@@ -7,5 +7,6 @@ out
 work
 .cache
 .pkgcheck
+control-center/target
 *.iso
 *.iso.sha256

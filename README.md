@@ -20,7 +20,7 @@ abgestimmtes Paket- und Konfigurationsset mit.
 - **Tuning:** Sysctl-Profil, zram, GameMode-Konfiguration, MangoHud-Standardprofil,
   Shader-Cache-Limit, Gamecontroller-udev-Regeln, Leistungsprofile
 - **Werkzeuge:** `playforge-install`, `playforge-doctor`, `playforge-tweaks`,
-  `playforge-run`
+  `playforge-run`, `playforge-control-center`
 
 ## Voraussetzungen für den Build
 
@@ -28,6 +28,9 @@ abgestimmtes Paket- und Konfigurationsset mit.
 - Paket `archiso` (`pacman -S --needed archiso`)
 - aktiviertes `[multilib]`-Repository (für Steam und `lib32-*`):
   in `/etc/pacman.conf` `[multilib]` einkommentieren, danach `sudo pacman -Sy`
+- `rust` für das Control Center (`sudo pacman -S --needed rust`); im
+  Builder-Container ist Rust enthalten, auf einem Arch-Host ohne Rust wird das
+  ISO ohne Control Center gebaut (Warnung am Ende von `build.sh`)
 - ca. 25 GB freier Speicher, 8 GB RAM empfohlen
 - Internetzugang
 
@@ -284,6 +287,42 @@ Das Theme lässt sich wie jedes globale KDE-Theme unter
 *Systemeinstellungen → Erscheinungsbild → Globales Design* wechseln; die
 Playforge-Varianten bleiben dort auswählbar.
 
+### Playforge Control Center
+
+`playforge-control-center` bündelt Systemstatus und Einstellungen in einer
+Rust-Applikation (egui). Ein einzelnes Binary ohne Laufzeitabhängigkeiten,
+also ohne GTK/Qt-Bibliotheken und ohne Webserver. Start über das
+Anwendungsmenü oder `playforge-control-center`.
+
+- **Übersicht** – Kernel, CPU, RAM/zram, GPU, Vulkan, Paketstand und eine
+  Checkliste, was für Steam und Proton eingerichtet ist
+- **Leistung** – Profil `performance`/`balanced`/`reset` über
+  `playforge-tweaks`, Live-Werte (Governor, EPP, `vm.max_map_count`, BBR) und
+  das Shader-Cache-Limit
+- **Gaming** – GameMode-Parameter in `/etc/gamemode.ini`, MangoHud-Profile und
+  ein Konfigurator für `playforge-run`-Startoptionen
+- **Grafik** – GPUs mit Kernel-Treiber, Vulkan-ICDs, 32-Bit-Unterstützung,
+  `vulkaninfo --summary` und `nvidia-smi`
+- **Dienste** – Start/Stopp und Autostart der Playforge-relevanten
+  systemd-Units
+- **Diagnose** – `playforge-doctor` aufbereitet nach OK, Warnung und Fehler
+- **Protokolle** – `journalctl -b`, gefiltert nach Playforge-Diensten
+
+Systemänderungen schreibt die App niemals selbst: Sie ruft
+`/usr/local/lib/playforge/control-helper.sh` über `pkexec` auf (auf dem
+Live-Medium über das passwortlose sudo von `gamer`). Der Helfer prüft Befehle
+und Werte gegen feste Listen; freie Pfade oder Unit-Namen nimmt er nicht an.
+
+Selbst bauen und testen:
+
+```bash
+bash scripts/build-control-center.sh   # out/control-center/playforge-control-center
+./out/control-center/playforge-control-center
+```
+
+`build.sh` baut die App automatisch, sofern `cargo` vorhanden ist, und legt sie
+in das Live-System und in die Installation.
+
 ### Spiele mit GameMode/MangoHud/Gamescope starten
 
 In Steam als Startoption:
@@ -322,9 +361,13 @@ Dockerfile                   Gepinnter Arch-Builder-Container
 .github/workflows/           GitHub Actions: ISO bauen und als Artefakt ablegen
 scripts/
   build-iso-container.sh     Lokaler Docker-/Podman-Build
+  build-control-center.sh    Control Center (Rust) lokal bauen
   container-entrypoint.sh    Build, Verify, Boot-Test und BUILD-INFO im Container
   verify-iso.sh              BIOS-/UEFI-/Kernel-/SquashFS-Prüfung
   boot-smoke-test.sh         QEMU/OVMF-Boottest mit serieller Konsole
+control-center/              Control Center für Linux (Rust, egui)
+  src/                       Fenster, Seiten, Systemabfragen, Aktionen
+  Cargo.toml                 Abhängigkeiten und Release-Profil
 profile/                     Overlay auf das archiso-Releng-Profil
   profiledef.sh              ISO-Name, Label, Bootmodi, Rechte
   airootfs/                  Nur Live-System (SDDM-Autologin, Live-Setup)
@@ -332,9 +375,10 @@ overlay/                     Dateien für Live-System *und* Installation
   etc/                       pacman.conf (multilib), Sysctl, zram, GameMode, udev, skel
   etc/xdg/                   KDE-Standardwerte und Theme-Autostart
   usr/local/bin/             playforge-install/-doctor/-tweaks/-run/-theme
-  usr/local/lib/playforge/   configure-target.sh, Theme-Skripte
+  usr/local/lib/playforge/   configure-target.sh, control-helper.sh, Theme-Skripte
   usr/local/share/playforge/ Paketliste des Zielsystems
-  usr/share/                 Theme, Wallpaper, Farbschema, Icons, Logo
+  usr/share/                 Theme, Wallpaper, Farbschema, Icons, Logo,
+                             Menüeintrag des Control Centers
 ```
 
 Der Paketcache unter `.cache/pacman/` wird beim Container-Build angelegt und ist

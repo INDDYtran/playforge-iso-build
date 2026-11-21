@@ -1,0 +1,26 @@
+[package]
+name = "playforge-control-center"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.81"
+description = "Playforge Control Center – Systemstatus, Leistung und Gaming-Einstellungen"
+license = "GPL-2.0-or-later"
+
+[dependencies]
+# `glow` statt `wgpu`: kleineres Binary, keine zusätzliche Shader-Übersetzung.
+# Wayland und X11 sind beide aktiv, damit die App auf Plasma (Wayland) und
+# unter Xorg läuft.
+eframe = { version = "0.31", default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

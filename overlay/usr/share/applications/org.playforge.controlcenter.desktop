@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Playforge Control Center
+Name[de]=Playforge Control Center
+GenericName=System Control Center
+GenericName[de]=Systemsteuerung
+Comment=System status, performance and gaming settings
+Comment[de]=Systemstatus, Leistung und Gaming-Einstellungen
+Exec=playforge-control-center
+Icon=org.playforge.controlcenter
+Terminal=false
+Categories=System;Settings;Game;
+Keywords=playforge;control;center;gaming;leistung;performance;gamemode;mangohud;
+StartupNotify=true
+StartupWMClass=org.playforge.controlcenter

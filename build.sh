@@ -75,6 +75,17 @@ install -d "$profile_dir/airootfs/usr/local/share/playforge/overlay"
 cp -a "$repo_dir/overlay/." "$profile_dir/airootfs/usr/local/share/playforge/overlay/"
 install -m 0644 "$repo_dir/overlay/etc/pacman.conf" "$profile_dir/pacman.conf"
 
+msg "Baue Control Center (Rust)"
+cc_dir="$repo_dir/control-center"
+if command -v cargo >/dev/null 2>&1; then
+    (cd "$cc_dir" && cargo build --release --locked)
+    install -Dm0755 "$cc_dir/target/release/playforge-control-center" \
+        "$profile_dir/airootfs/usr/local/share/playforge/overlay/usr/local/bin/playforge-control-center"
+else
+    warn "cargo fehlt – das Control Center wird nicht ins ISO aufgenommen."
+    warn "Nachinstallieren mit 'pacman -S --needed rust' oder scripts/build-control-center.sh nutzen."
+fi
+
 msg "Erzeuge Paketliste"
 {
     printf '# Automatisch erzeugt von build.sh – nicht bearbeiten.\n'
