@@ -93,6 +93,12 @@ while IFS= read -r rel; do
     fi
     sum="$(sha256sum "$payload/$rel" | cut -d' ' -f1)"
     mode="$(stat -c '%a' "$payload/$rel")"
+    # Ein Windows-Checkout verliert das Ausführungsbit. Dateien mit Shebang
+    # sind Skripte und müssen auf dem Zielsystem ausführbar sein – dieselbe
+    # Regel, die playforge-install beim Kopieren anwendet.
+    if [[ "$(head -c 2 "$payload/$rel")" == "#!" ]]; then
+        mode="755"
+    fi
     printf '%s\t%s\t%s\n' "$sum" "$mode" "$rel" >>"$manifest"
 done < <(cd "$payload" && find . -type f -printf '%P\n' | LC_ALL=C sort)
 
