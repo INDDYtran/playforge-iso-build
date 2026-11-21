@@ -90,7 +90,7 @@ jobs:
             echo "Version im Update ($version) weicht vom Commit ($SHA) ab." >&2
             exit 1
           }
-          tar -tzf out/playforge-update.tar.gz | head -5
+          tar -tzf out/playforge-update.tar.gz | sed -n '1,5p'
           {
             echo ""
             echo "| | |"
