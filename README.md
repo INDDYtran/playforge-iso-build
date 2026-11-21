@@ -147,7 +147,7 @@ Optionen per Umgebung:
 
 | Variable | Standard | Bedeutung |
 | --- | --- | --- |
-| `ARCHIVE_DATE` | `2026/11/20` | Arch-Linux-Archive-Snapshot; `latest` oder leer = aktuelle Mirrors |
+| `ARCHIVE_DATE` | aktuelle Mirrors | Arch-Linux-Archive-Snapshot (`YYYY/MM/DD`); `latest` oder leer = aktuelle Mirrors |
 | `SOURCE_DATE_EPOCH` | Commit-Zeit bzw. `1795132800` | Zeitstempel im ISO |
 | `PLAYFORGE_BASE_IMAGE` | gepinnter Digest | Basis-Image |
 | `PLAYFORGE_PACMAN_CACHE` | `.cache/pacman` | Paketcache auf dem Host |
@@ -155,10 +155,10 @@ Optionen per Umgebung:
 | `PLAYFORGE_SKIP_BOOT_TEST` | `0` | `1` überspringt den Boot-Smoke-Test |
 | `CONTAINER_ENGINE` | automatisch | `docker` oder `podman` |
 
-Beispiel mit aktuellem Paketstand:
+Beispiel mit festem Paketstand:
 
 ```bash
-ARCHIVE_DATE=latest bash scripts/build-iso-container.sh
+ARCHIVE_DATE=2026/11/20 bash scripts/build-iso-container.sh
 ```
 
 ### Paket- und Docker-Layer-Cache
@@ -190,7 +190,7 @@ Builder-Layer pro Lauf frisch; dort greift der Paketcache über `actions/cache`.
 `BUILD-INFO.txt` und `smoke-test.log` (14 Tage Aufbewahrung). Die Standardwerte
 lassen sich als Repository-Variablen überschreiben:
 
-- `PLAYFORGE_ARCHIVE_DATE` (z. B. `2026/11/20` oder `latest`)
+- `PLAYFORGE_ARCHIVE_DATE` (Standard `latest`; fester Snapshot z. B. `2026/11/20`)
 - `PLAYFORGE_BASE_IMAGE` (Digest oder Tag)
 
 Der Workflow läuft auf `ubuntu-24.04`, gibt vorher Speicherplatz frei und

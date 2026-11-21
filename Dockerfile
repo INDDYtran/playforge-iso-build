@@ -11,7 +11,7 @@ ARG BASE_IMAGE=archlinux/archlinux@sha256:66876082fe42b95d8778e581395b4f4e73d704
 FROM ${BASE_IMAGE}
 
 ARG BASE_IMAGE
-ARG ARCHIVE_DATE=2026/11/20
+ARG ARCHIVE_DATE=
 
 ENV ARCHIVE_DATE=${ARCHIVE_DATE} \
     TZ=UTC \
@@ -25,25 +25,54 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # haengt nur von Basis-Image und ARCHIVE_DATE ab.
 #
 # Arch Linux Archive für einen festen Paketstand verwenden. Ist ARCHIVE_DATE
-# leer, bleiben die normalen Mirrors des Basis-Images aktiv.
+# leer, wird ein aktueller Mirror genutzt (Standard, weil Archive-Snapshots
+# tageweise unerreichbar sein können).
 #
 # Das offizielle Arch-Basis-Image enthaelt in /etc/pacman.conf keine
 # [multilib]-Sektion. Ohne sie fehlt multilib.db, und build.sh kann die
 # 32-Bit-Pakete (steam, lib32-*) nicht prüfen. QEMU und OVMF werden für den
 # Boot-Smoke-Test im Container benötigt.
+# archive.archlinux.org ist nicht immer erreichbar (Timeouts). Deshalb:
+# mehrere Versuche pro Synchronisation und ein aktueller Mirror als Rückfall,
+# damit ein einzelner Aussetzer den Build nicht mehr abbricht.
 RUN set -eux; \
+    archive_mirror=""; \
+    fallback_mirror="https://geo.mirror.pkgbuild.com"; \
     if [[ -n "${ARCHIVE_DATE}" ]]; then \
-        printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "${ARCHIVE_DATE}" \
+        archive_mirror="https://archive.archlinux.org/repos/${ARCHIVE_DATE}"; \
+        printf 'Server = %s/$repo/os/$arch\n' "$archive_mirror" \
+            > /etc/pacman.d/mirrorlist; \
+    else \
+        printf 'Server = %s/$repo/os/$arch\n' "$fallback_mirror" \
             > /etc/pacman.d/mirrorlist; \
     fi; \
     if ! grep -q '^\[multilib\]' /etc/pacman.conf; then \
         printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf; \
     fi; \
-    pacman -Syy --noconfirm; \
+    sync_repos() { \
+        local attempt; \
+        for attempt in 1 2 3 4; do \
+            if pacman -Syy --noconfirm; then \
+                return 0; \
+            fi; \
+            echo "pacman -Syy fehlgeschlagen (Versuch ${attempt}/4), neuer Versuch in 20s" >&2; \
+            sleep 20; \
+        done; \
+        return 1; \
+    }; \
+    use_fallback() { \
+        printf 'Server = %s/$repo/os/$arch\nServer = %s/$repo/os/$arch\n' \
+            "${archive_mirror}" "$fallback_mirror" > /etc/pacman.d/mirrorlist; \
+    }; \
+    if ! sync_repos; then \
+        echo "Archiv-Mirror '${archive_mirror}' nicht erreichbar, nutze $fallback_mirror" >&2; \
+        use_fallback; \
+        sync_repos; \
+    fi; \
     pacman -S --needed --noconfirm archiso qemu-system-x86 edk2-ovmf \
         rust gcc pkgconf wayland libxkbcommon libx11 libxcursor libxrandr libxi; \
     pacman -Scc --noconfirm; \
-    pacman -Syy --noconfirm
+    sync_repos
 
 # Erst nach dem Paket-Layer setzen: SOURCE_DATE_EPOCH und der Basis-Digest
 # werden nur für den Build-Lauf gebraucht und sollen den Layer nicht treffen.

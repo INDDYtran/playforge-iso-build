@@ -11,9 +11,9 @@ die() {
 }
 info() { printf '\n==> %s\n' "$*"; }
 
-# Standard: fester Arch-Linux-Archive-Snapshot. ARCHIVE_DATE="" nutzt die
-# aktuellen Mirrors des Basis-Images (weniger reproduzierbar).
-archive_date="${ARCHIVE_DATE-2026/11/20}"
+# Standard: aktuelle Mirrors. Ein fester Archive-Snapshot (YYYY/MM/DD) ist
+# reproduzierbarer, aber archive.archlinux.org ist nicht immer erreichbar.
+archive_date="${ARCHIVE_DATE-}"
 if [[ "$archive_date" == "latest" ]]; then
     archive_date=""
 fi

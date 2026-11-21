@@ -72,7 +72,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          archive_date="${INPUT_ARCHIVE_DATE:-${REPO_ARCHIVE_DATE:-2026/11/20}}"
+          archive_date="${INPUT_ARCHIVE_DATE:-${REPO_ARCHIVE_DATE:-latest}}"
           if [[ "$archive_date" == "latest" ]]; then
             archive_date=""
           fi
