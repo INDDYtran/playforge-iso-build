@@ -1,0 +1,14 @@
+[Unit]
+Description=Playforge-Systemupdate prüfen
+Documentation=https://github.com/INDDYtran/playforge-iso-build
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Schreibt nur /var/lib/playforge/update-status – installiert nichts.
+ExecStart=/usr/local/bin/playforge-update --check --quiet
+# 10 bedeutet "Update verfügbar" und ist kein Fehler.
+SuccessExitStatus=10
+Nice=10
+IOSchedulingClass=idle

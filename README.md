@@ -300,6 +300,15 @@ PLAYFORGE_UPDATE_BASE=file:///tmp/release
 PLAYFORGE_UPDATE_ROOT=/tmp/testwurzel
 ```
 
+Damit man nicht selbst nachsehen muss, prüft `playforge-update-check.timer` das
+Update einmal täglich (plus 10 Minuten nach dem Booten) und schreibt das
+Ergebnis still nach `/var/lib/playforge/update-status`. Der Tab „Updates“ im
+Control Center zeigt darauf „Update verfügbar“ mit installierter und neuer
+Version, wie lange die Prüfung her ist und ob der Timer läuft. Installiert
+wird dabei nichts: Wer das Update will, führt `sudo playforge-update` aus.
+Der Timer wird bei der Installation eingeschaltet und von `playforge-update`
+nachgeholt, falls er auf einem älteren System noch fehlt.
+
 Veröffentlicht wird das Update von `.github/workflows/publish-update.yml`:
 bei Änderungen an `overlay/` oder `control-center/` und manuell über
 "Run workflow". Der Lauf baut das Control Center im Builder-Container, packt

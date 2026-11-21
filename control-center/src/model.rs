@@ -18,6 +18,19 @@ pub struct Snapshot {
     pub services: Vec<ServiceInfo>,
     pub settings: SettingsInfo,
     pub nvidia_smi: Option<String>,
+    pub system_update: SystemUpdate,
+}
+
+/// Stand der täglichen Playforge-Systemupdate-Prüfung (systemd-Timer).
+#[derive(Clone, Debug, Default)]
+pub struct SystemUpdate {
+    pub checked: Option<SystemTime>,
+    pub installed: Option<String>,
+    pub available: Option<String>,
+    pub update_available: bool,
+    /// Letzte Prüfung ist fehlgeschlagen (z. B. kein Netz).
+    pub failed: bool,
+    pub timer_active: bool,
 }
 
 #[derive(Clone, Debug, Default)]

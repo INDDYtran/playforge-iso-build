@@ -85,6 +85,7 @@ pub fn collect() -> Snapshot {
         packages: collect_packages(),
         services,
         settings,
+        system_update: collect_system_update(),
         nvidia_smi: run(
             "nvidia-smi",
             &[
@@ -567,6 +568,42 @@ fn collect_autoupdate() -> AutoUpdate {
         timer_active,
         last_update,
     }
+}
+
+/// Liest das Ergebnis der täglichen Prüfung durch playforge-update-check.timer.
+fn collect_system_update() -> SystemUpdate {
+    let text = fs::read_to_string("/var/lib/playforge/update-status").unwrap_or_default();
+    let mut status = SystemUpdate::default();
+
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+        match key.trim() {
+            "CHECKED" => {
+                status.checked = value
+                    .parse::<u64>()
+                    .ok()
+                    .and_then(|secs| SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(secs)));
+            }
+            "INSTALLED" if !value.is_empty() => status.installed = Some(value.to_string()),
+            "AVAILABLE" if !value.is_empty() => status.available = Some(value.to_string()),
+            "UPDATE" => status.update_available = value == "1",
+            "STATE" => status.failed = value == "error",
+            _ => {}
+        }
+    }
+
+    if status.installed.is_none() {
+        status.installed = read_trim("/etc/playforge/version");
+    }
+
+    status.timer_active = run("systemctl", &["is-active", "playforge-update-check.timer"])
+        .map(|out| out.trim() == "active")
+        .unwrap_or(false);
+
+    status
 }
 
 /// Prüft verfügbare Updates (ohne etwas zu installieren).

@@ -59,6 +59,7 @@ allowed_prefixes=(
 action="apply"
 dry_run=0
 force=0
+quiet=0
 tmp_dir=""
 
 cleanup() {
@@ -72,9 +73,10 @@ die() {
     printf 'Fehler: %s\n' "$*" >&2
     exit 1
 }
-info() { printf '%s\n' "$*"; }
-detail() { printf '  %-14s %s\n' "$1" "$2"; }
-step() { printf '\n==> %s\n' "$*"; }
+# --quiet hält die Ausgabe leer, damit der systemd-Timer still bleibt.
+info() { (( quiet )) || printf '%s\n' "$*"; }
+detail() { (( quiet )) || printf '  %-14s %s\n' "$1" "$2"; }
+step() { (( quiet )) || printf '\n==> %s\n' "$*"; }
 
 usage() {
     cat <<'EOF'
@@ -90,6 +92,7 @@ Optionen:
   --apply      Update installieren (Standard, benötigt root)
   --rollback   letzte Sicherung zurückspielen (benötigt root)
   --force      auch installieren, wenn die Version gleich ist
+  --quiet      keine Ausgabe (für den systemd-Timer)
   -h, --help   diese Hilfe
 
 Umgebung:
@@ -108,6 +111,7 @@ while (( $# > 0 )); do
         --dry-run) action="apply"; dry_run=1 ;;
         --rollback) action="rollback" ;;
         --force) force=1 ;;
+        --quiet) quiet=1 ;;
         -h | --help)
             usage
             exit 0
@@ -133,6 +137,32 @@ require_root() {
     if (( EUID != 0 )); then
         die "Bitte mit Administratorrechten ausführen: sudo playforge-update"
     fi
+}
+
+status_file="$state_dir/update-status"
+
+# Hält das Ergebnis der Prüfung für das Control Center fest. Läuft ohne
+# Schreibrechte (manueller --check als Benutzer) einfach ins Leere.
+write_status() {
+    local state="$1" available="$2" update="$3" installed
+    installed="$(local_version || true)"
+    mkdir -p -- "$state_dir" 2>/dev/null || return 0
+    {
+        printf 'CHECKED=%s\n' "$(date -u +%s)"
+        printf 'INSTALLED=%s\n' "${installed:-unbekannt}"
+        printf 'AVAILABLE=%s\n' "$available"
+        printf 'UPDATE=%s\n' "$update"
+        printf 'STATE=%s\n' "$state"
+    } >"$status_file" 2>/dev/null || return 0
+    chmod 0644 -- "$status_file" 2>/dev/null || true
+}
+
+# Der Prüf-Timer gehört zum System: nach dem Update einschalten, falls er es
+# noch nicht ist. In der Testwurzel bleibt das System unberührt.
+enable_check_timer() {
+    [[ -z "$root" ]] || return 0
+    command -v systemctl >/dev/null 2>&1 || return 0
+    systemctl enable --now playforge-update-check.timer >/dev/null 2>&1 || true
 }
 
 path_allowed() {
@@ -201,9 +231,13 @@ do_rollback() {
     fi
 
     reload_units
+    enable_check_timer
+    # Der gespeicherte Prüfstand passt nicht mehr – die nächste Prüfung füllt
+    # die Anzeige neu, bis dahin zeigt das Control Center lieber nichts an.
+    rm -f -- "$status_file"
 
     printed="$(local_version || true)"
-    printf '\n==> Zurückgerollt auf %s\n' "${printed:-unbekannt}"
+    step "Zurückgerollt auf ${printed:-unbekannt}"
     detail "Dateien" "$restored wiederhergestellt, $removed entfernt"
     detail "Sicherung" "$latest (verbraucht)"
     rm -rf -- "$latest"
@@ -230,17 +264,20 @@ do_update() {
 
     remote="$(remote_version || true)"
     if [[ -z "$remote" ]]; then
+        write_status error "" 0
         die "Kein Update gefunden. Gibt es das Release 'system-update' in $repo?"
     fi
     detail "Verfügbar" "$remote"
 
     if [[ "$remote" == "$current" ]] && (( force == 0 )); then
+        write_status ok "$remote" 0
         info ""
         info "Das System ist bereits aktuell."
         exit 0
     fi
 
     if [[ "$action" == "check" ]]; then
+        write_status ok "$remote" 1
         info ""
         info "Update verfügbar: $current -> $remote"
         exit 10
@@ -313,12 +350,14 @@ do_update() {
         done < "$manifest_file"
     fi
 
-    printf '\n   %s Dateien im Update, %s neu, %s geändert, %s unverändert' \
-        "$count" "${#added[@]}" "${#updated[@]}" "$unchanged"
-    if (( ${#removed_list[@]} > 0 )); then
-        printf ', %s entfallen' "${#removed_list[@]}"
+    if (( quiet == 0 )); then
+        printf '\n   %s Dateien im Update, %s neu, %s geändert, %s unverändert' \
+            "$count" "${#added[@]}" "${#updated[@]}" "$unchanged"
+        if (( ${#removed_list[@]} > 0 )); then
+            printf ', %s entfallen' "${#removed_list[@]}"
+        fi
+        printf '\n'
     fi
-    printf '\n'
 
     if (( ${#added[@]} == 0 && ${#updated[@]} == 0 && ${#removed_list[@]} == 0 )); then
         info ""
@@ -326,6 +365,7 @@ do_update() {
         if (( dry_run == 0 )); then
             install -Dm0644 -- "$tmp_dir/manifest.tsv" "$manifest_file"
             printf '%s\n' "$remote" >"$version_file"
+            write_status ok "$remote" 0
         fi
         exit 0
     fi
@@ -371,6 +411,8 @@ do_update() {
     mkdir -p -- "$(dirname -- "$version_file")"
     printf '%s\n' "$remote" >"$version_file"
     reload_units
+    enable_check_timer
+    write_status ok "$remote" 0
 
     # 6. Alte Sicherungen aufräumen.
     local prune
@@ -384,7 +426,7 @@ do_update() {
         done <<<"$prune"
     fi
 
-    printf '\n==> Fertig: %s -> %s\n' "$current" "$remote"
+    step "Fertig: $current -> $remote"
     detail "Neu" "${#added[@]}"
     detail "Geändert" "${#updated[@]}"
     detail "Entfernt" "${#removed_list[@]}"

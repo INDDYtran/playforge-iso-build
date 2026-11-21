@@ -123,6 +123,7 @@ systemctl enable power-profiles-daemon.service
 systemctl enable systemd-timesyncd.service
 systemctl enable reflector.timer
 systemctl enable playforge-profile.service
+systemctl enable playforge-update-check.timer
 systemctl set-default graphical.target
 
 info "Initramfs erzeugen"

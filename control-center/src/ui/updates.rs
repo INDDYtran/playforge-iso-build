@@ -4,7 +4,7 @@ use eframe::egui::{self, Align, Layout, RichText};
 
 use crate::app::ControlCenter;
 use crate::icons::Icon;
-use crate::model::{fmt_age, Snapshot};
+use crate::model::{fmt_age, Snapshot, SystemUpdate};
 use crate::theme;
 use crate::ui;
 
@@ -17,6 +17,9 @@ pub fn show(cc: &mut ControlCenter, ui: &mut egui::Ui) {
     ui::helper_notice(cc, ui);
 
     status_card(cc, ui);
+    ui.add_space(ui::GAP);
+
+    system_card(&snap.system_update, ui);
     ui.add_space(ui::GAP);
 
     ui::grid(ui, &[1.0, 1.0], |ui, column| {
@@ -148,6 +151,68 @@ fn status_card(cc: &mut ControlCenter, ui: &mut egui::Ui) {
                     );
                 }
             }
+        }
+    });
+}
+
+/// Playforge-Systemupdate: Ergebnis des täglichen Timers, ohne Installation.
+fn system_card(status: &SystemUpdate, ui: &mut egui::Ui) {
+    ui::panel_titled(ui, "Playforge-Systemupdate", "github · systemd-timer", |ui| {
+        ui::hint(
+            ui,
+            "Der Timer prüft einmal täglich still, ob neue Playforge-Systemdateien \
+             bereitstehen. Installiert wird nichts von allein – das entscheidest du.",
+        );
+        ui.add_space(12.0);
+
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::Vec2::new(6.0, 6.0);
+            match &status.installed {
+                Some(version) => ui::badge(ui, &format!("installiert {version}"), theme::INFO),
+                None => ui::badge(ui, "Version unbekannt", theme::MUTED),
+            };
+            if status.update_available {
+                ui::badge(ui, "Update verfügbar", theme::ACCENT);
+            } else if status.checked.is_some() {
+                ui::badge(ui, "aktuell", theme::OK);
+            }
+            if status.timer_active {
+                ui::badge(ui, "Timer aktiv", theme::OK);
+            } else {
+                ui::badge(ui, "Timer aus", theme::MUTED);
+            }
+            if status.failed {
+                ui::badge(ui, "letzte Prüfung fehlgeschlagen", theme::WARN);
+            }
+            if let Some(checked) = status.checked {
+                ui::badge(ui, &format!("geprüft {}", fmt_age(checked)), theme::FAINT);
+            }
+        });
+
+        if status.update_available {
+            let version = match (&status.installed, &status.available) {
+                (Some(installed), Some(available)) => format!("{installed} → {available}"),
+                (None, Some(available)) => available.clone(),
+                _ => String::new(),
+            };
+            ui.add_space(12.0);
+            ui::notice(
+                ui,
+                Icon::Refresh,
+                theme::ACCENT,
+                &format!("Neue Systemdateien bereit: {version}"),
+            );
+            ui.add_space(9.0);
+            ui::code_block(
+                ui,
+                "playforge-update-cmd",
+                "terminal",
+                "sudo playforge-update",
+                44.0,
+            );
+        } else if status.checked.is_none() {
+            ui.add_space(12.0);
+            ui::mono_label(ui, "NOCH KEINE PRÜFUNG DURCH DEN TIMER", theme::FAINT, 9.5);
         }
     });
 }

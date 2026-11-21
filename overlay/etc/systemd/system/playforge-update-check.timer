@@ -1,0 +1,11 @@
+[Unit]
+Description=Tägliche Prüfung auf Playforge-Systemupdates
+
+[Timer]
+OnBootSec=10min
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
