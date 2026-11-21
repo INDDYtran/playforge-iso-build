@@ -1,0 +1,135 @@
+name: Playforge ISO veröffentlichen
+
+# Stellt jedes fertig gebaute ISO dauerhaft als GitHub-Release bereit. GitHub
+# erlaubt nur Assets unter 2 GiB, deshalb wird das ISO in Teile zerlegt.
+# Das Release trägt den Tag iso-<commit>; "latest" bleibt bewusst das
+# Release system-update, an dem playforge-update hängt.
+on:
+  workflow_run:
+    workflows: ["Playforge ISO"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID eines erfolgreichen ISO-Builds (leer = letzter erfolgreicher)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: playforge-iso-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: ISO als Release bereitstellen
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Build-Lauf und Artefakt bestimmen
+        id: run
+        run: |
+          set -Eeuo pipefail
+
+          run_id="${{ inputs.run_id }}"
+          if [[ -z "$run_id" && "${{ github.event_name }}" == "workflow_run" ]]; then
+            run_id="${{ github.event.workflow_run.id }}"
+          fi
+          if [[ -z "$run_id" ]]; then
+            run_id="$(gh run list --repo "$REPO" --workflow=build-iso.yml \
+              --status=success --limit=1 --json databaseId --jq '.[0].databaseId')"
+          fi
+          [[ "$run_id" =~ ^[0-9]+$ ]] || { echo "Kein erfolgreicher ISO-Build gefunden." >&2; exit 1; }
+
+          artifact="$(gh api "repos/$REPO/actions/runs/$run_id/artifacts" --jq '.artifacts[0].name')"
+          [[ "$artifact" == playforge-iso-* ]] || {
+            echo "Unerwartetes Artefakt: $artifact" >&2
+            exit 1
+          }
+          sha="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '.head_sha' | cut -c1-12)"
+
+          echo "id=$run_id" >>"$GITHUB_OUTPUT"
+          echo "artifact=$artifact" >>"$GITHUB_OUTPUT"
+          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+
+          {
+            echo "### ISO-Release \`iso-$sha\`"
+            echo ""
+            echo "Quelllauf: https://github.com/$REPO/actions/runs/$run_id"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Artefakt laden
+        run: |
+          set -Eeuo pipefail
+          mkdir -p dist/source
+          gh run download "${{ steps.run.outputs.id }}" --repo "$REPO" \
+            --name "${{ steps.run.outputs.artifact }}" --dir dist/source
+          find dist/source -maxdepth 2 -type f -printf '%p  %s Bytes\n'
+
+      - name: In Release-Teile zerlegen
+        run: |
+          set -Eeuo pipefail
+          iso="$(find dist/source -maxdepth 2 -name '*.iso' -type f -print -quit)"
+          [[ -n "$iso" ]] || { echo "Kein ISO im Artefakt gefunden." >&2; exit 1; }
+
+          bash scripts/publish-iso-parts.sh "$iso" dist/release
+
+          cp -- "$(dirname "$iso")"/*.sha256 dist/release/ 2>/dev/null || true
+          cp -- "$(dirname "$iso")"/BUILD-INFO.txt dist/release/ 2>/dev/null || true
+          cp -- "$(dirname "$iso")"/smoke-test.log dist/release/ 2>/dev/null || true
+          ls -lh dist/release
+
+      - name: Release anlegen und hochladen
+        run: |
+          set -Eeuo pipefail
+          tag="iso-${{ steps.run.outputs.sha }}"
+          notes="$(cat dist/release/RELEASE.md)"
+
+          if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
+            gh release edit "$tag" --repo "$REPO" --notes "$notes"
+          else
+            # --latest=false: das Release darf playforge-update nicht die
+            # Quelle "releases/latest" wegnehmen.
+            gh release create "$tag" --repo "$REPO" \
+              --title "Playforge ISO ${{ steps.run.outputs.sha }}" \
+              --notes "$notes" \
+              --latest=false
+          fi
+
+          gh release upload "$tag" dist/release/* --repo "$REPO" --clobber
+
+          {
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Release | https://github.com/$REPO/releases/tag/$tag |"
+            echo "| Assets | $(find dist/release -maxdepth 1 -type f | wc -l) |"
+            echo "| Gesamtgröße | $(du -sh dist/release | cut -f1) |"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Prüfen, dass system-update "latest" bleibt
+        run: |
+          set -Eeuo pipefail
+          # playforge-update holt seine Dateien über releases/latest/download.
+          # Zeigt "latest" auf ein ISO-Release, findet es kein Update mehr.
+          if ! curl -fsSL "https://github.com/$REPO/releases/latest/download/playforge-update.version" >/dev/null; then
+            echo "releases/latest zeigt nicht auf system-update – korrigiere." >&2
+            gh release edit system-update --repo "$REPO" --latest
+          fi
+          is_latest="$(gh release view system-update --repo "$REPO" --json isLatest --jq '.isLatest')"
+          [[ "$is_latest" == "true" ]] || {
+            echo "system-update ist nicht mehr das neueste Release." >&2
+            exit 1
+          }
+          echo "system-update bleibt latest." >>"$GITHUB_STEP_SUMMARY"

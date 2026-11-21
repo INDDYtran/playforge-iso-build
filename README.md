@@ -220,8 +220,29 @@ Signaturen. Sie sind reine Download-Beschleuniger.
 
 **Hinweis zur Artefaktgröße:** GitHub-Actions-Artefakte sind auf 10 GB pro
 Artefakt begrenzt; das ISO ist mehrere GB groß (typisch 2–4 GB). Bei privaten Repositories
-zählt es gegen das Actions-Speicherkontingent (Free: 500 MB). Für größere
-Verteilung eignet sich ein Release oder externer Speicher.
+zählt es gegen das Actions-Speicherkontingent (Free: 500 MB). Deshalb wird
+jedes ISO zusätzlich als Release veröffentlicht (siehe Download).
+
+## Download
+
+Fertige ISOs liegen dauerhaft als GitHub-Release `iso-<commit>` bereit, nicht
+nur als CI-Artefakt mit Ablaufdatum. GitHub erlaubt höchstens 2 GiB pro
+Release-Asset – ein ISO hat rund 3 GB, deshalb besteht jedes Release aus
+Teilen:
+
+```bash
+gh release download iso-9107dbdfe7a9 -R INDDYtran/playforge-iso-build
+cat playforge-*.iso.part-* > playforge.iso
+sha256sum -c playforge-*.iso.sha256
+sudo dd if=playforge.iso of=/dev/sdX bs=4M status=progress oflag=sync
+```
+
+Die Teile lassen sich auch einzeln über die Release-Seite herunterladen;
+`REJOIN.txt` im Release nennt Reihenfolge und Prüfsummen, `*.parts.sha256`
+prueft die Teile einzeln. Veröffentlicht wird automatisch von
+`.github/workflows/publish-iso.yml` nach jedem erfolgreichen ISO-Build oder
+manuell mit einer Build-ID. Das Release `system-update` bleibt bewusst das
+„latest“-Release, weil `playforge-update` seine Dateien von dort holt.
 
 ## Installation
 
