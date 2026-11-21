@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Playforge – Spiele mit GameMode, MangoHud und optional Gamescope starten
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+Nutzung: playforge-run [Optionen] -- <Befehl> [Argumente...]
+
+Optionen:
+  --hud, -m        MangoHud-Overlay aktivieren
+  --no-gamemode    GameMode nicht verwenden
+  --gamescope      In einer Gamescope-Session starten (Mikro-Compositor)
+  --windowed       Mit Gamescope im Fenster statt Vollbild starten
+  --resolution WxH Auflösung für Gamescope (Standard: 1920x1080)
+  -h, --help       Diese Hilfe anzeigen
+
+Beispiele:
+  playforge-run --hud -- %command%                       # Steam-Startoption
+  playforge-run --hud -- ./spiel
+  playforge-run --gamescope --resolution 2560x1440 -- %command%
+EOF
+}
+
+die() {
+    printf 'Fehler: %s\n' "$*" >&2
+    exit 1
+}
+
+hud=0
+use_gamemode=1
+use_gamescope=0
+fullscreen=1
+resolution=""
+
+while (( $# > 0 )); do
+    case "$1" in
+        --hud | -m) hud=1 ;;
+        --no-gamemode) use_gamemode=0 ;;
+        --gamescope) use_gamescope=1 ;;
+        --windowed) fullscreen=0 ;;
+        --resolution)
+            [[ $# -ge 2 ]] || die "--resolution benötigt einen Wert, z. B. 2560x1440."
+            resolution="$2"
+            shift
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *) break ;;
+    esac
+    shift
+done
+
+(( $# > 0 )) || {
+    usage
+    exit 1
+}
+
+command=("$@")
+wrapper=()
+
+if (( use_gamemode )); then
+    command -v gamemoderun >/dev/null 2>&1 || die "gamemoderun fehlt. Installieren: sudo pacman -S gamemode"
+    wrapper+=(gamemoderun)
+fi
+
+if (( hud )); then
+    command -v mangohud >/dev/null 2>&1 || die "mangohud fehlt. Installieren: sudo pacman -S mangohud"
+    export MANGOHUD=1
+    wrapper+=(mangohud)
+fi
+
+if (( use_gamescope )); then
+    command -v gamescope >/dev/null 2>&1 || die "gamescope fehlt. Installieren: sudo pacman -S gamescope"
+    if [[ -z "${WAYLAND_DISPLAY:-}" && -z "${DISPLAY:-}" ]]; then
+        printf 'Warnung: keine grafische Sitzung erkannt (WAYLAND_DISPLAY/DISPLAY leer).\n' >&2
+    fi
+    resolution="${resolution:-1920x1080}"
+    width="${resolution%x*}"
+    height="${resolution#*x}"
+    if ! [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]]; then
+        die "Ungültige Auflösung: $resolution (erwartet z. B. 2560x1440)."
+    fi
+    gamescope_args=(gamescope -W "$width" -H "$height")
+    if (( fullscreen )); then
+        gamescope_args+=(-f)
+    fi
+    wrapper=("${gamescope_args[@]}" -- "${wrapper[@]}")
+fi
+
+exec "${wrapper[@]}" "${command[@]}"

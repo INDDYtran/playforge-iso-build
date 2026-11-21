@@ -1,0 +1,195 @@
+name: Playforge ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      archive_date:
+        description: "Arch-Linux-Archive-Snapshot (YYYY/MM/DD), 'latest' für aktuelle Mirrors, leer = Standard"
+        required: false
+        type: string
+      source_date_epoch:
+        description: "SOURCE_DATE_EPOCH als Unix-Zeit; leer = Commit-Zeit"
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playforge-iso-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ISO bauen und prüfen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Speicherplatz freigeben
+        run: |
+          set -Eeuo pipefail
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost \
+            /usr/share/swift \
+            /usr/local/.ghcup
+          sudo apt-get clean
+          sudo docker image prune -af || true
+          df -h /
+
+      - name: Docker-Speicher auf /mnt legen
+        run: |
+          set -Eeuo pipefail
+          # GitHub-Runner haben auf /mnt deutlich mehr Platz als auf /.
+          if [[ -d /mnt ]] && (( $(df --output=avail -BG /mnt | tail -1 | tr -dc '0-9') > 30 )); then
+            if [[ ! -e /etc/docker/daemon.json ]]; then
+              sudo mkdir -p /mnt/docker
+              printf '{"data-root":"/mnt/docker"}\n' | sudo tee /etc/docker/daemon.json >/dev/null
+              sudo systemctl restart docker
+            fi
+          fi
+          for _ in {1..30}; do docker info >/dev/null 2>&1 && break; sleep 1; done
+          docker info --format 'Docker-Root: {{.DockerRootDir}}'
+          df -h /
+          if [[ -d /mnt ]]; then df -h /mnt; fi
+
+      - name: Build-Parameter bestimmen
+        id: params
+        env:
+          INPUT_ARCHIVE_DATE: ${{ inputs.archive_date }}
+          INPUT_EPOCH: ${{ inputs.source_date_epoch }}
+          REPO_ARCHIVE_DATE: ${{ vars.PLAYFORGE_ARCHIVE_DATE }}
+        run: |
+          set -Eeuo pipefail
+
+          archive_date="${INPUT_ARCHIVE_DATE:-${REPO_ARCHIVE_DATE:-2026/11/20}}"
+          if [[ "$archive_date" == "latest" ]]; then
+            archive_date=""
+          fi
+          if [[ -n "$archive_date" && ! "$archive_date" =~ ^[0-9]{4}/[0-9]{2}/[0-9]{2}$ ]]; then
+            echo "Ungültiges Archivdatum: $archive_date" >&2
+            exit 1
+          fi
+
+          archive_key="${archive_date//\//-}"
+          [[ -n "$archive_key" ]] || archive_key="latest"
+
+          epoch="${INPUT_EPOCH:-$(git log -1 --format=%ct)}"
+          if [[ ! "$epoch" =~ ^[0-9]+$ ]]; then
+            echo "Ungültiger SOURCE_DATE_EPOCH: $epoch" >&2
+            exit 1
+          fi
+
+          echo "archive_date=$archive_date" >> "$GITHUB_OUTPUT"
+          echo "archive_key=$archive_key" >> "$GITHUB_OUTPUT"
+          echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "Archiv-Snapshot: \`${archive_date:-aktuelle Mirrors}\`"
+            echo "SOURCE_DATE_EPOCH: \`$epoch\` ($(date -u -d "@$epoch" +%FT%TZ))"
+            echo "Quellstand: \`$(git rev-parse HEAD)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Paket-Cache-Verzeichnis anlegen
+        run: mkdir -p .cache/pacman
+
+      - name: Paket-Cache wiederherstellen
+        id: pacman-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/pacman
+          key: pacman-${{ runner.os }}-${{ steps.params.outputs.archive_key }}-${{ hashFiles('build.sh', 'overlay/usr/local/share/playforge/packages.target', 'profile/profiledef.sh', 'overlay/etc/pacman.conf') }}
+          restore-keys: |
+            pacman-${{ runner.os }}-${{ steps.params.outputs.archive_key }}-
+
+      - name: Builder-Image bauen
+        env:
+          ARCHIVE_DATE: ${{ steps.params.outputs.archive_date }}
+          EPOCH: ${{ steps.params.outputs.epoch }}
+        run: |
+          set -Eeuo pipefail
+          base_image="${{ vars.PLAYFORGE_BASE_IMAGE }}"
+          base_image="${base_image:-archlinux/archlinux@sha256:66876082fe42b95d8778e581395b4f4e73d7043491470276bb3aa5a1f2009b5b}"
+
+          docker build \
+            --platform linux/amd64 \
+            --build-arg "BASE_IMAGE=$base_image" \
+            --build-arg "ARCHIVE_DATE=$ARCHIVE_DATE" \
+            --build-arg "SOURCE_DATE_EPOCH=$EPOCH" \
+            -t playforge-builder .
+
+      - name: ISO bauen
+        env:
+          ARCHIVE_DATE: ${{ steps.params.outputs.archive_date }}
+          EPOCH: ${{ steps.params.outputs.epoch }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p out
+          docker run --rm --privileged \
+            --platform linux/amd64 \
+            -e "SOURCE_DATE_EPOCH=$EPOCH" \
+            -e "ARCHIVE_DATE=$ARCHIVE_DATE" \
+            -v "$PWD/out:/build/out" \
+            -v "$PWD/.cache/pacman:/var/cache/pacman/pkg" \
+            playforge-builder
+
+      - name: Ergebnis prüfen
+        id: result
+        run: |
+          set -Eeuo pipefail
+          ls -lh out
+          (
+            cd out
+            sha256sum -c ./*.sha256
+          )
+          iso="$(find out -maxdepth 1 -type f -name '*.iso' -printf '%f\n' | sort | tail -n1)"
+          [[ -n "$iso" ]] || { echo "Kein ISO gefunden." >&2; exit 1; }
+          sha256="$(cut -d' ' -f1 "out/${iso}.sha256")"
+          echo "iso=$iso" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Fertiges ISO"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Datei | \`$iso\` |"
+            echo "| SHA256 | \`$sha256\` |"
+            echo "| Quelle | \`${{ steps.params.outputs.sha }}\` |"
+            echo "| Archiv-Snapshot | \`${{ steps.params.outputs.archive_date }}\` |"
+            echo "| Paket-Cache | ${{ steps.pacman-cache.outputs.cache-hit == 'true' && 'Treffer' || 'Miss' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ISO samt SHA256 als Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: playforge-iso-${{ steps.params.outputs.sha }}
+          path: |
+            out/*.iso
+            out/*.iso.sha256
+            out/BUILD-INFO.txt
+            out/smoke-test.log
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Boot-Test-Log bei Fehler hochladen
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playforge-smoke-log-${{ github.run_id }}
+          path: |
+            out/smoke-test.log
+            out/smoke-test.log.qemu
+          if-no-files-found: ignore
+          retention-days: 7

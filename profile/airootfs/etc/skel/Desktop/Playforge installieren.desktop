@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Playforge installieren
+Comment=Installiert Playforge auf die Festplatte
+Exec=konsole -e playforge-install
+Icon=system-software-install
+Terminal=false
+Categories=System;

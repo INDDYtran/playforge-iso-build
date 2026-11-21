@@ -1,0 +1,11 @@
+.git
+.github
+.freebuff
+.idea
+.vscode
+out
+work
+.cache
+.pkgcheck
+*.iso
+*.iso.sha256

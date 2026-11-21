@@ -1,0 +1,6 @@
+/work/
+/out/
+/.pkgcheck/
+/.cache/
+*.iso
+*.iso.sha256

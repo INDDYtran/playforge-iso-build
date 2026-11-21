@@ -1,0 +1,346 @@
+#!/usr/bin/env bash
+# Playforge – Installer für das Zielsystem
+set -Eeuo pipefail
+
+target=/mnt
+overlay_source=/usr/local/share/playforge/overlay
+target_pkg_file=/usr/local/share/playforge/packages.target
+
+disk=""
+efi_part=""
+root_part=""
+root_uuid=""
+hostname=""
+username=""
+timezone=""
+locale_name=""
+keymap=""
+filesystem="ext4"
+gpu=""
+uefi=0
+btrfs=0
+mounted=0
+
+if [[ -t 1 ]]; then
+    bold=$'\e[1m'
+    reset=$'\e[0m'
+else
+    bold=""
+    reset=""
+fi
+
+info() { printf '\n%s==> %s%s\n' "$bold" "$*" "$reset"; }
+warn() { printf 'Warnung: %s\n' "$*" >&2; }
+die() {
+    printf '\nFehler: %s\n' "$*" >&2
+    exit 1
+}
+
+on_error() {
+    printf '\nDie Installation ist fehlgeschlagen (Exit-Code %d).\n' "$1" >&2
+}
+cleanup() {
+    local rc=$?
+    if (( rc != 0 && mounted )); then
+        rm -f "$target/root/playforge-config.sh" 2>/dev/null || true
+        if mountpoint -q "$target"; then
+            printf 'Hänge %s aus ...\n' "$target" >&2
+            umount -R "$target" 2>/dev/null || true
+        fi
+    fi
+    exit "$rc"
+}
+trap 'on_error $?' ERR
+trap cleanup EXIT
+
+usage() {
+    cat <<'EOF'
+Nutzung: playforge-install
+
+Interaktiver Installer: partitioniert einen Datenträger, installiert das
+Playforge-Paketset und richtet Bootloader, Benutzer und Dienste ein.
+
+ACHTUNG: Der gewählte Datenträger wird vollständig gelöscht.
+Voraussetzungen: Live-System, Internetzugang, mindestens 32 GiB Datenträger.
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+fi
+
+if (( EUID != 0 )); then
+    command -v sudo >/dev/null 2>&1 || die "Bitte als root starten."
+    exec sudo -- "$0" "$@"
+fi
+
+info "Prüfe Voraussetzungen"
+for cmd in pacstrap genfstab arch-chroot sgdisk lsblk blkid mkfs.fat mkfs.ext4 mkfs.btrfs partprobe wipefs openssl; do
+    command -v "$cmd" >/dev/null 2>&1 || die "Benötigtes Werkzeug fehlt: $cmd"
+done
+[[ -f "$target_pkg_file" ]] || die "Paketliste $target_pkg_file fehlt."
+[[ -d "$overlay_source" ]] || die "Overlay $overlay_source fehlt."
+if [[ -d /sys/firmware/efi ]]; then
+    uefi=1
+fi
+if mountpoint -q "$target"; then
+    die "$target ist bereits eingehängt. Bitte zuerst 'umount -R $target' ausführen."
+fi
+if ! pacman -Sy --noconfirm >/dev/null 2>&1; then
+    die "Paketdatenbanken konnten nicht aktualisiert werden. Internetzugang prüfen (WLAN/LAN)."
+fi
+
+info "Verfügbare Datenträger"
+lsblk -dno NAME,SIZE,TYPE,MODEL | awk '$3 == "disk" {
+    model = "";
+    for (i = 4; i <= NF; i++) model = model (i > 4 ? " " : "") $i;
+    printf "  %-18s %9s  %s\n", "/dev/" $1, $2, model
+}'
+
+while [[ -z "$disk" ]]; do
+    read -rp "Ziel-Datenträger (z. B. /dev/nvme0n1): " disk
+    if [[ ! -b "$disk" ]]; then
+        warn "$disk ist kein Blockgerät."
+        disk=""
+        continue
+    fi
+    if [[ "$(lsblk -dnro TYPE "$disk" 2>/dev/null)" != "disk" ]]; then
+        warn "Bitte den gesamten Datenträger angeben, keine Partition."
+        disk=""
+    fi
+done
+
+live_source="$(findmnt -no SOURCE /run/archiso/bootmnt 2>/dev/null || true)"
+if [[ -n "$live_source" ]]; then
+    live_parent="$(lsblk -no PKNAME "$live_source" 2>/dev/null | head -n1 || true)"
+    if [[ -n "$live_parent" && "$live_parent" == "$(basename "$disk")" ]]; then
+        die "$disk ist der Live-Datenträger und kann nicht Ziel der Installation sein."
+    fi
+fi
+
+if lsblk -no MOUNTPOINTS "$disk" 2>/dev/null | grep -q '[^[:space:]]'; then
+    die "Auf $disk sind Partitionen eingehängt. Bitte zuerst aushängen."
+fi
+
+disk_bytes="$(lsblk -bndo SIZE "$disk")"
+if (( disk_bytes < 34359738368 )); then
+    die "$disk ist kleiner als 32 GiB."
+fi
+
+info "Ziel: $disk"
+lsblk -dno NAME,SIZE,MODEL,SERIAL "$disk"
+read -rp "Zum Bestätigen den Gerätenamen exakt eingeben ($disk): " disk_confirm
+[[ "$disk_confirm" == "$disk" ]] || die "Abgebrochen."
+read -rp "Wirklich ALLES auf $disk löschen? (JA/nein): " wipe_confirm
+[[ "$wipe_confirm" == "JA" ]] || die "Abgebrochen."
+
+read -rp "Hostname [playforge]: " hostname
+hostname="${hostname:-playforge}"
+[[ "$hostname" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$ ]] || die "Ungültiger Hostname."
+
+read -rp "Benutzername [gamer]: " username
+username="${username:-gamer}"
+[[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "Ungültiger Benutzername."
+
+while true; do
+    read -rsp "Passwort für $username: " user_pw
+    printf '\n'
+    read -rsp "Passwort wiederholen: " user_pw2
+    printf '\n'
+    if [[ -n "$user_pw" && "$user_pw" == "$user_pw2" ]]; then
+        break
+    fi
+    warn "Passwörter sind leer oder unterschiedlich."
+done
+
+read -rsp "Root-Passwort (leer = root wird gesperrt): " root_pw
+printf '\n'
+if [[ -n "$root_pw" ]]; then
+    read -rsp "Root-Passwort wiederholen: " root_pw2
+    printf '\n'
+    [[ "$root_pw" == "$root_pw2" ]] || die "Root-Passwörter sind unterschiedlich."
+fi
+
+user_hash="$(printf '%s\n' "$user_pw" | openssl passwd -6 -stdin)"
+root_hash=""
+if [[ -n "$root_pw" ]]; then
+    root_hash="$(printf '%s\n' "$root_pw" | openssl passwd -6 -stdin)"
+fi
+unset user_pw user_pw2 root_pw root_pw2
+
+read -rp "Zeitzone [Europe/Berlin]: " timezone
+timezone="${timezone:-Europe/Berlin}"
+[[ -f "/usr/share/zoneinfo/$timezone" ]] || die "Unbekannte Zeitzone: $timezone"
+
+read -rp "Locale [de_DE.UTF-8]: " locale_name
+locale_name="${locale_name:-de_DE.UTF-8}"
+locale_base="${locale_name%%.*}"
+if [[ -d /usr/share/i18n/locales && ! -f "/usr/share/i18n/locales/$locale_base" ]]; then
+    die "Locale $locale_name ist nicht verfügbar."
+fi
+
+read -rp "Konsolen-Tastaturlayout [de-latin1]: " keymap
+keymap="${keymap:-de-latin1}"
+keymap_file="$(find /usr/share/kbd/keymaps -type f -name "$keymap.map.gz" -print -quit 2>/dev/null || true)"
+[[ -n "$keymap_file" ]] || die "Unbekanntes Tastaturlayout: $keymap"
+
+printf '\nDateisystem:\n  1) ext4 (Standard)\n  2) btrfs (Subvolumes + zstd-Komprimierung)\n'
+read -rp "Auswahl [1]: " fs_choice
+case "${fs_choice:-1}" in
+    1) filesystem="ext4" ;;
+    2)
+        filesystem="btrfs"
+        btrfs=1
+        ;;
+    *) die "Ungültige Auswahl." ;;
+esac
+
+detected_gpu="$(lspci -nn 2>/dev/null | grep -E 'VGA compatible controller|3D controller|Display controller' || true)"
+gpu_default=4
+case "$detected_gpu" in
+    *AMD* | *ATI*) gpu_default=1 ;;
+    *Intel*) gpu_default=2 ;;
+    *NVIDIA*) gpu_default=3 ;;
+esac
+printf '\nErkannte Grafik:\n%s\n' "${detected_gpu:-  (keine erkannt)}"
+printf 'Grafiktreiber:\n  1) AMD (mesa/vulkan-radeon)\n  2) Intel (mesa/vulkan-intel)\n  3) NVIDIA Turing oder neuer (nvidia-open-dkms)\n  4) Nur Basis/nouveau\n'
+read -rp "Auswahl [$gpu_default]: " gpu_choice
+gpu_choice="${gpu_choice:-$gpu_default}"
+case "$gpu_choice" in
+    1) gpu="amd" ;;
+    2) gpu="intel" ;;
+    3) gpu="nvidia" ;;
+    4) gpu="none" ;;
+    *) die "Ungültige Auswahl." ;;
+esac
+
+if (( uefi )); then
+    boot_mode="UEFI (systemd-boot)"
+else
+    boot_mode="BIOS (GRUB)"
+fi
+
+info "Zusammenfassung"
+printf '  Datenträger : %s (wird vollständig gelöscht)\n' "$disk"
+printf '  Bootloader  : %s\n' "$boot_mode"
+printf '  Dateisystem : %s\n' "$filesystem"
+printf '  Hostname    : %s\n' "$hostname"
+printf '  Benutzer    : %s\n' "$username"
+printf '  Zeitzone    : %s\n' "$timezone"
+printf '  Locale      : %s\n' "$locale_name"
+printf '  Tastatur    : %s\n' "$keymap"
+printf '  Grafik      : %s\n' "$gpu"
+read -rp "Installation jetzt starten? (ja/nein): " start_confirm
+[[ "$start_confirm" == "ja" ]] || die "Abgebrochen."
+
+part_path() {
+    local number="$1"
+    if [[ "$disk" =~ [0-9]$ ]]; then
+        printf '%sp%s' "$disk" "$number"
+    else
+        printf '%s%s' "$disk" "$number"
+    fi
+}
+
+info "Partitioniere $disk"
+wipefs -a "$disk" >/dev/null
+sgdisk --zap-all "$disk" >/dev/null
+if (( uefi )); then
+    efi_part="$(part_path 1)"
+    root_part="$(part_path 2)"
+    sgdisk -n 1:0:+1G -t 1:ef00 -c 1:EFI \
+        -n 2:0:0 -t 2:8300 -c 2:Playforge "$disk" >/dev/null
+else
+    root_part="$(part_path 2)"
+    sgdisk -n 1:0:+1M -t 1:ef02 -c 1:"BIOS boot" \
+        -n 2:0:0 -t 2:8300 -c 2:Playforge "$disk" >/dev/null
+fi
+partprobe "$disk" 2>/dev/null || true
+udevadm settle 2>/dev/null || true
+sleep 1
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if [[ -b "$root_part" && ( -z "$efi_part" || -b "$efi_part" ) ]]; then
+        break
+    fi
+    sleep 0.5
+done
+[[ -b "$root_part" ]] || die "Partition $root_part wurde nicht angelegt."
+if (( uefi )); then
+    [[ -b "$efi_part" ]] || die "EFI-Partition $efi_part wurde nicht angelegt."
+    mkfs.fat -F32 -n EFI "$efi_part"
+fi
+
+info "Formatiere $root_part als $filesystem"
+if (( btrfs )); then
+    mkfs.btrfs -f -L Playforge "$root_part"
+    mount "$root_part" "$target"
+    mounted=1
+    btrfs subvolume create "$target/@" "$target/@home" >/dev/null
+    umount "$target"
+    mount -o subvol=@,compress=zstd:3,noatime "$root_part" "$target"
+    mkdir -p "$target/home"
+    mount -o subvol=@home,compress=zstd:3,noatime "$root_part" "$target/home"
+else
+    mkfs.ext4 -F -L Playforge "$root_part"
+    mount -o noatime "$root_part" "$target"
+    mounted=1
+fi
+root_uuid="$(blkid -s UUID -o value "$root_part")"
+[[ -n "$root_uuid" ]] || die "UUID von $root_part konnte nicht gelesen werden."
+
+if (( uefi )); then
+    mkdir -p "$target/boot"
+    mount "$efi_part" "$target/boot"
+fi
+
+info "Kopiere Playforge-Konfiguration"
+cp -a "$overlay_source/." "$target/"
+chmod 0755 "$target"/usr/local/bin/playforge-* 2>/dev/null || true
+chmod 0755 "$target/usr/local/lib/playforge/configure-target.sh" 2>/dev/null || true
+
+info "Installiere Pakete (kann 10–30 Minuten dauern)"
+mapfile -t packages < <(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$target_pkg_file" | awk 'NF')
+(( ${#packages[@]} > 0 )) || die "Paketliste ist leer."
+pacstrap -K -C /etc/pacman.conf "$target" "${packages[@]}"
+
+info "Erzeuge /etc/fstab"
+genfstab -U "$target" >>"$target/etc/fstab"
+
+info "Konfiguriere Zielsystem"
+install -d -m 0700 "$target/root"
+{
+    printf 'HOSTNAME=%q\n' "$hostname"
+    printf 'USERNAME=%q\n' "$username"
+    printf 'USER_HASH=%q\n' "$user_hash"
+    printf 'ROOT_HASH=%q\n' "$root_hash"
+    printf 'TIMEZONE=%q\n' "$timezone"
+    printf 'LOCALE_NAME=%q\n' "$locale_name"
+    printf 'KEYMAP=%q\n' "$keymap"
+    printf 'DISK=%q\n' "$disk"
+    printf 'ROOT_UUID=%q\n' "$root_uuid"
+    printf 'UEFI=%q\n' "$uefi"
+    printf 'BTRFS=%q\n' "$btrfs"
+    printf 'GPU=%q\n' "$gpu"
+} >"$target/root/playforge-config.sh"
+chmod 0600 "$target/root/playforge-config.sh"
+
+arch-chroot "$target" /bin/bash /usr/local/lib/playforge/configure-target.sh
+
+rm -f "$target/root/playforge-config.sh"
+rm -rf "$target/var/cache/pacman/pkg/"* 2>/dev/null || true
+sync
+
+info "Hänge Zielsystem aus"
+if ! umount -R "$target"; then
+    warn "Konnte $target nicht vollständig aushängen. Bitte vor dem Neustart prüfen."
+fi
+
+info "Installation abgeschlossen"
+printf '  Benutzer : %s\n' "$username"
+printf '  Hostname : %s\n' "$hostname"
+printf '  Start    : reboot\n\n'
+printf 'Nach dem Neustart:\n'
+printf '  playforge-doctor              # Treiber und Gaming-Stack prüfen\n'
+printf '  sudo playforge-tweaks status  # Leistungsprofil\n'
+printf '  Steam-Startoption: playforge-run --hud -- %%command%%\n'

@@ -1,0 +1,8 @@
+# Playforge – gängige Gamecontroller nicht in den USB-Ruhezustand schicken
+# Sony (DualShock/DualSense), Microsoft (Xbox), Nintendo (Switch Pro/Joy-Con),
+# Valve (Steam Controller), Hori
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="054c", ATTR{power/control}="on"
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{power/control}="on"
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="057e", ATTR{power/control}="on"
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="28de", ATTR{power/control}="on"
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0f0d", ATTR{power/control}="on"

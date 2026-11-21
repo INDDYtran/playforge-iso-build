@@ -1,0 +1,12 @@
+[Unit]
+Description=Playforge-Leistungsprofil anwenden
+ConditionPathExists=/etc/playforge/profile
+After=power-profiles-daemon.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/playforge-tweaks apply
+
+[Install]
+WantedBy=multi-user.target

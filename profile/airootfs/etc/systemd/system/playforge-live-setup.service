@@ -1,0 +1,12 @@
+[Unit]
+Description=Playforge Live-Session vorbereiten
+After=systemd-sysusers.service local-fs.target
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/playforge/live-setup
+
+[Install]
+WantedBy=multi-user.target

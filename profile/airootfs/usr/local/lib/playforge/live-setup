@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Playforge – bereitet die Live-Session vor (läuft vor display-manager.service).
+set -euo pipefail
+
+overlay_dir=/usr/local/share/playforge/overlay
+new_user=0
+
+if [[ -d "$overlay_dir" ]]; then
+    cp -a "$overlay_dir/." /
+fi
+
+chmod 0755 /usr/local/bin/playforge-* 2>/dev/null || true
+chmod 0755 /usr/local/lib/playforge/configure-target.sh 2>/dev/null || true
+
+groups="wheel,video,render,audio,input,storage"
+if ! getent group gamemode >/dev/null 2>&1; then
+    groupadd -r gamemode 2>/dev/null || true
+fi
+if getent group gamemode >/dev/null 2>&1; then
+    groups+=",gamemode"
+fi
+
+if ! id -u gamer >/dev/null 2>&1; then
+    useradd -m -G "$groups" -s /bin/bash gamer
+    new_user=1
+else
+    usermod -aG "$groups" gamer 2>/dev/null || true
+fi
+
+# Live-Session ohne Passwort; nur lokal erreichbar, SSH ist nicht aktiviert.
+passwd -d gamer >/dev/null 2>&1 || true
+
+install -d -m 0750 /etc/sudoers.d
+printf 'gamer ALL=(ALL:ALL) NOPASSWD: ALL\n' >/etc/sudoers.d/99-playforge-live
+chmod 0440 /etc/sudoers.d/99-playforge-live
+
+if (( new_user )); then
+    chmod 0755 /home/gamer/Desktop/*.desktop 2>/dev/null || true
+fi
+
+modprobe tcp_bbr 2>/dev/null || true
+sysctl --system >/dev/null 2>&1 || true
+
+# Neu kopierte udev-Regeln auch für bereits angeschlossene Controller anwenden.
+udevadm control --reload-rules >/dev/null 2>&1 || true
+udevadm trigger --subsystem-match=usb >/dev/null 2>&1 || true
+
+# Marker für den Boot-Smoke-Test. /dev/console ist bei der ISO-Kommandozeile
+# (console=tty0 console=ttyS0,115200n8) die serielle Konsole; ttyS0 wird
+# zusätzlich direkt beschrieben, damit der Test nicht von der Reihenfolge der
+# Kernel-Konsolen abhängt.
+printf '\nPLAYFORGE_LIVE_READY\n' >/dev/console
+if [[ -c /dev/ttyS0 ]]; then
+    printf '\nPLAYFORGE_LIVE_READY\n' >/dev/ttyS0 || true
+fi
+
+exit 0

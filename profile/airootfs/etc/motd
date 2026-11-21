@@ -1,0 +1,16 @@
+  ██████╗ ██╗      █████╗ ██╗   ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗
+  ██╔══██╗██║     ██╔══██╗╚██╗ ██╔╝██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
+  ██████╔╝██║     ███████║ ╚████╔╝ █████╗  ██║   ██║██████╔╝██║  ███╗█████╗
+  ██╔═══╝ ██║     ██╔══██║  ╚██╔╝  ██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝
+  ██║     ███████╗██║  ██║   ██║   ██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
+  ╚═╝     ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+
+  Arch Linux · Gaming Edition
+
+  Installation starten :  playforge-install
+  System prüfen        :  playforge-doctor
+  Leistungsprofil      :  playforge-tweaks status | performance | balanced
+  Spiel starten        :  playforge-run --hud -- <befehl>
+
+  Live-Benutzer: gamer (ohne Passwort, sudo ohne Passwort)
+  Der Live-Betrieb läuft im RAM – Änderungen werden nicht gespeichert.

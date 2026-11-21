@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# Playforge – Systemdiagnose für Gaming
+set -euo pipefail
+
+ok=0
+warnings=0
+failures=0
+if [[ -t 1 ]]; then
+    green=$'\e[32m'
+    yellow=$'\e[33m'
+    red=$'\e[31m'
+    bold=$'\e[1m'
+    reset=$'\e[0m'
+else
+    green=""
+    yellow=""
+    red=""
+    bold=""
+    reset=""
+fi
+
+okmsg() {
+    printf '  [%sOK%s]   %s\n' "$green" "$reset" "$*"
+    ok=$((ok + 1))
+}
+warnmsg() {
+    printf '  [%sWARN%s] %s\n' "$yellow" "$reset" "$*"
+    warnings=$((warnings + 1))
+}
+failmsg() {
+    printf '  [%sFAIL%s] %s\n' "$red" "$reset" "$*"
+    failures=$((failures + 1))
+}
+section() { printf '\n%s%s%s\n' "$bold" "$*" "$reset"; }
+
+section "System"
+if [[ -f /etc/arch-release ]] || grep -q '^ID_LIKE=arch' /etc/os-release 2>/dev/null; then
+    okmsg "Arch-basiertes System"
+else
+    warnmsg "Kein Arch-System erkannt"
+fi
+printf '  Kernel: %s\n' "$(uname -r)"
+if [[ "$(uname -r)" == *zen* ]]; then
+    okmsg "linux-zen läuft"
+else
+    warnmsg "Nicht der linux-zen-Kernel (Gaming-Profil empfohlen)"
+fi
+
+section "Sicherer Start"
+if [[ -d /sys/firmware/efi ]]; then
+    okmsg "UEFI-Boot"
+    sb_file="/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"
+    if [[ -r "$sb_file" ]]; then
+        sb_val="$(od -An -t u1 -j4 -N1 "$sb_file" 2>/dev/null | tr -d '[:space:]')"
+        if [[ "$sb_val" == "1" ]]; then
+            if lsmod | grep -q '^nvidia'; then
+                warnmsg "Secure Boot aktiv + NVIDIA-DKMS: Module müssen signiert sein, sonst laden sie nicht"
+            else
+                warnmsg "Secure Boot aktiv (unproblematisch ohne DKMS-Treiber)"
+            fi
+        else
+            okmsg "Secure Boot aus"
+        fi
+    else
+        warnmsg "Secure-Boot-Status nicht lesbar"
+    fi
+else
+    okmsg "BIOS/Legacy-Boot"
+fi
+
+section "Grafik"
+gpu_count=0
+while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    gpu_count=$((gpu_count + 1))
+    printf '  GPU: %s\n' "$line"
+done < <(lspci -nn 2>/dev/null | grep -E 'VGA compatible controller|3D controller|Display controller' || true)
+if (( gpu_count == 0 )); then
+    warnmsg "Keine GPU über lspci gefunden"
+fi
+drivers="$(lspci -nnk 2>/dev/null | awk '
+    /VGA compatible controller|3D controller|Display controller/ { gpu = 1; next }
+    gpu && /Kernel driver in use/ { print $NF; gpu = 0; next }
+    gpu && /^[^[:space:]]/ { gpu = 0 }
+' | sort -u | tr '\n' ' ' || true)"
+printf '  Treiber: %s\n' "${drivers:-unbekannt}"
+case "$drivers" in
+    *nvidia*) okmsg "NVIDIA-Treiber geladen" ;;
+    *amdgpu*) okmsg "AMDGPU-Treiber geladen" ;;
+    *i915* | *xe*) okmsg "Intel-Treiber geladen" ;;
+    *nouveau*) warnmsg "Nouveau aktiv – für Gaming den NVIDIA-Treiber installieren" ;;
+    *) warnmsg "Kein bekannter GPU-Treiber erkannt" ;;
+esac
+
+section "Vulkan und 32-Bit"
+mapfile -t icds < <(find /usr/share/vulkan/icd.d -maxdepth 1 -name '*.json' -printf '%f\n' 2>/dev/null | sort)
+if (( ${#icds[@]} > 0 )); then
+    okmsg "Vulkan-ICDs: ${icds[*]}"
+else
+    failmsg "Keine Vulkan-ICD gefunden (mesa/vulkan-radeon/vulkan-intel/nvidia-utils prüfen)"
+fi
+if command -v vulkaninfo >/dev/null 2>&1; then
+    if vulkaninfo --summary >/dev/null 2>&1; then
+        okmsg "vulkaninfo läuft"
+    else
+        warnmsg "vulkaninfo meldet Fehler"
+    fi
+else
+    warnmsg "vulkan-tools (vulkaninfo) nicht installiert"
+fi
+if [[ -e /usr/lib32/libvulkan.so.1 ]]; then
+    okmsg "32-Bit-Vulkan vorhanden (Steam/Proton)"
+else
+    warnmsg "32-Bit-Vulkan fehlt (lib32-vulkan-*)"
+fi
+if pacman-conf --repo-list 2>/dev/null | grep -qx multilib; then
+    okmsg "[multilib] aktiv"
+else
+    warnmsg "[multilib] ist nicht aktiv"
+fi
+
+section "Gaming-Stack"
+for tool in steam lutris gamemoderun mangohud gamescope goverlay; do
+    if command -v "$tool" >/dev/null 2>&1; then
+        okmsg "$tool installiert"
+    else
+        warnmsg "$tool fehlt"
+    fi
+done
+
+section "System-Tuning"
+map_count="$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)"
+[[ "$map_count" =~ ^[0-9]+$ ]] || map_count=0
+if (( map_count >= 2147483642 )); then
+    okmsg "vm.max_map_count = $map_count"
+else
+    warnmsg "vm.max_map_count = $map_count (niedrig; einige Spiele brauchen mehr)"
+fi
+if command -v powerprofilesctl >/dev/null 2>&1; then
+    printf '  Power-Profil: %s\n' "$(powerprofilesctl get 2>/dev/null || echo '?')"
+fi
+if [[ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]]; then
+    printf '  CPU-Governor: %s\n' "$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)"
+fi
+if [[ -n "$(zramctl --noheadings 2>/dev/null || true)" ]]; then
+    okmsg "ZRAM aktiv"
+else
+    warnmsg "ZRAM nicht aktiv (zram-generator prüfen)"
+fi
+
+section "Ergebnis"
+printf '  OK: %d   Warnungen: %d   Fehler: %d\n' "$ok" "$warnings" "$failures"
+if (( failures > 0 )); then
+    printf '\nMindestens ein Fehler – Details oben. Tipps: https://wiki.archlinux.org/title/Gaming\n'
+    exit 1
+fi
+printf '\nKeine kritischen Probleme gefunden.\n'
