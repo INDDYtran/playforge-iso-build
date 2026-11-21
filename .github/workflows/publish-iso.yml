@@ -123,13 +123,6 @@ jobs:
           set -Eeuo pipefail
           # playforge-update holt seine Dateien über releases/latest/download.
           # Zeigt "latest" auf ein ISO-Release, findet es kein Update mehr.
-          if ! curl -fsSL "https://github.com/$REPO/releases/latest/download/playforge-update.version" >/dev/null; then
-            echo "releases/latest zeigt nicht auf system-update – korrigiere." >&2
-            gh release edit system-update --repo "$REPO" --latest
-          fi
-          is_latest="$(gh release view system-update --repo "$REPO" --json isLatest --jq '.isLatest')"
-          [[ "$is_latest" == "true" ]] || {
-            echo "system-update ist nicht mehr das neueste Release." >&2
-            exit 1
-          }
+          bash scripts/verify-latest-release.sh "$REPO" system-update
+          curl -fsSL "https://github.com/$REPO/releases/latest/download/playforge-update.version" >/dev/null
           echo "system-update bleibt latest." >>"$GITHUB_STEP_SUMMARY"
