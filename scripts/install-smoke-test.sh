@@ -41,7 +41,7 @@ timeout="${PLAYFORGE_INSTALL_TIMEOUT:-3600}"
 [[ "$timeout" =~ ^[0-9]+$ ]] || die "PLAYFORGE_INSTALL_TIMEOUT muss eine Zahl sein."
 (( timeout > 0 )) || die "PLAYFORGE_INSTALL_TIMEOUT muss größer als 0 sein."
 
-for cmd in qemu-system-x86_64 qemu-img bsdtar; do
+for cmd in qemu-system-x86_64 bsdtar truncate; do
     command -v "$cmd" >/dev/null 2>&1 || die "$cmd fehlt."
 done
 
@@ -111,7 +111,9 @@ bsdtar -xOf "$iso" playforge/boot/x86_64/vmlinuz-linux >"$tmpdir/vmlinuz" ||
     die "Kernel konnte nicht aus dem ISO gelesen werden."
 bsdtar -xOf "$iso" playforge/boot/x86_64/initramfs-linux.img >"$tmpdir/initramfs" ||
     die "Initramfs konnte nicht aus dem ISO gelesen werden."
-qemu-img create -q -f qcow2 "$tmpdir/disk.qcow2" 40G ||
+# Sparse Raw-Platte: qemu-img ist im Builder-Container nicht installiert,
+# eine 40-GiB-Raw-Datei belegt ohne Schreibzugriffe praktisch keinen Platz.
+truncate -s 40G "$tmpdir/disk.raw" ||
     die "Virtuelle Platte konnte nicht angelegt werden."
 
 qemu_args=(
@@ -130,7 +132,7 @@ qemu_args=(
     -device virtio-scsi-pci,id=scsi0
     -drive "id=cdrom0,if=none,format=raw,media=cdrom,read-only=on,file=$iso"
     -device "scsi-cd,bus=scsi0.0,drive=cdrom0"
-    -drive "file=$tmpdir/disk.qcow2,if=virtio,format=qcow2"
+    -drive "file=$tmpdir/disk.raw,if=virtio,format=raw"
     -nic "user,model=virtio-net-pci"
     -display none
     -serial "file:$log"
