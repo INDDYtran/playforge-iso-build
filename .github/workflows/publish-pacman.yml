@@ -160,7 +160,7 @@ jobs:
           sha="$(git rev-parse --short=7 HEAD)"
           echo "PLAYFORGE_EXPECTED_VERSION=$date.r$count.g$sha" >>"$GITHUB_ENV"
 
-      - name: pacman gegen die Pages-Quelle testen
+      - name: Quelle und Migration testen
         run: |
           set -Eeuo pipefail
           docker run --rm \
@@ -172,4 +172,6 @@ jobs:
               set -Eeuo pipefail
               pacman -Syu --noconfirm --needed gnupg >/dev/null
               bash /src/packaging/pacman/verify-published-repo.sh
+              bash /src/overlay/usr/local/bin/playforge-repo-enable --yes
+              pacman -Q playforge-tools playforge-theme playforge-control-center
             '
