@@ -306,13 +306,22 @@ chmod 0755 "$target"/usr/local/lib/playforge/*.sh 2>/dev/null || true
 info "Installiere Pakete (kann 10–30 Minuten dauern)"
 mapfile -t packages < <(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$target_pkg_file" | awk 'NF')
 (( ${#packages[@]} > 0 )) || die "Paketliste ist leer."
-# Ohne -K wird mit dem bereits vertrauenswürdigen Schlüsselring des
-# Live-Systems geprüft. -K würde im Ziel einen leeren Schlüsselring anlegen,
-# in dem die Arch-Paketsignaturen unbekannt sind.
+# pacstrap prüft die Paketsignaturen mit dem Schlüsselring unterhalb des
+# Ziels (/mnt/etc/pacman.d/gnupg). Der Live-Schlüsselring entsteht erst beim
+# Booten (pacman-init), kann also noch fehlen. Deshalb den Ziel-Schlüsselring
+# vorab aus dem archlinux-keyring-Paket aufbauen; sonst scheitert pacstrap mit
+# "keyring is not writable" und unbekannten Arch-Signaturen.
+info "Baue Schlüsselring für das Zielsystem auf"
+install -d -m 0755 "$target/etc/pacman.d/gnupg"
+pacman-key --gpgdir "$target/etc/pacman.d/gnupg" --init
+pacman-key --gpgdir "$target/etc/pacman.d/gnupg" --populate archlinux
+key_count="$(pacman-key --gpgdir "$target/etc/pacman.d/gnupg" --list-keys 2>/dev/null | grep -c '^pub' || true)"
+printf '  %s Schlüssel importiert.\n' "${key_count:-0}"
+(( key_count > 0 )) || die "Schlüsselring im Zielsystem ist leer."
+
 pacstrap -C /etc/pacman.conf "$target" "${packages[@]}"
 
-info "Initialisiere Schlüsselring im Zielsystem"
-arch-chroot "$target" pacman-key --init
+info "Aktualisiere Schlüsselring im Zielsystem"
 arch-chroot "$target" pacman-key --populate archlinux
 
 info "Erzeuge /etc/fstab"
