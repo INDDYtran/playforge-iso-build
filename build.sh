@@ -208,17 +208,34 @@ ln -sfn /usr/lib/systemd/system/sddm.service \
 msg "Starte mkarchiso (das dauert je nach Hardware 20–60 Minuten)"
 mkarchiso -v -w "$work_dir" -o "$out_dir" "$profile_dir"
 
-if command -v lsinitcpio >/dev/null 2>&1; then
-    initramfs="$(find "$work_dir" -type f -name 'initramfs-linux.img' -print -quit 2>/dev/null || true)"
-    if [[ -n "$initramfs" ]]; then
-        lsinitcpio "$initramfs" | grep -qF 'plymouth/themes/playforge/background.png' ||
-            die "Plymouth-Theme fehlt in der erzeugten Initramfs: $initramfs"
-        msg "Plymouth-Theme ist in der Initramfs enthalten"
-    fi
-fi
-
 iso="$(find "$out_dir" -maxdepth 1 -type f -name 'playforge-*.iso' -printf '%T@ %p\n' | sort -n | tail -n1 | cut -d' ' -f2-)"
 [[ -n "$iso" && -f "$iso" ]] || die "Kein ISO in $out_dir gefunden."
+
+# mkarchiso räumt sein Arbeitsverzeichnis auf; die Initramfs wird deshalb aus
+# dem fertigen ISO gelesen. Sie besteht aus einem unkomprimierten
+# Microcode-CPIO und einem xz-komprimierten CPIO – gesucht wird ab dem
+# xz-Stream, die Dateinamen stehen im CPIO-Kopf im Klartext.
+if command -v bsdtar >/dev/null 2>&1 && command -v xz >/dev/null 2>&1; then
+    initramfs_tmp="$(mktemp)"
+    bsdtar -xOf "$iso" playforge/boot/x86_64/initramfs-linux.img >"$initramfs_tmp" 2>/dev/null ||
+        die "Initramfs konnte nicht aus $iso gelesen werden."
+    xz_offset="$(grep -abo -m1 $'\xfd7zXZ\x00' "$initramfs_tmp" | cut -d: -f1 || true)"
+    if [[ -z "$xz_offset" ]]; then
+        rm -f "$initramfs_tmp"
+        die "Kein xz-Stream in der Initramfs gefunden."
+    fi
+    if tail -c +"$((xz_offset + 1))" "$initramfs_tmp" | xz -dc 2>/dev/null |
+        grep -aF "$plymouth_rel/background.png" >/dev/null; then
+        msg "Plymouth-Theme ist in der Initramfs enthalten"
+    else
+        rm -f "$initramfs_tmp"
+        die "Plymouth-Theme fehlt in der Initramfs des ISO."
+    fi
+    rm -f "$initramfs_tmp"
+else
+    warn "bsdtar/xz fehlen – die Initramfs wird nicht auf das Splash-Theme geprüft."
+fi
+
 (
     cd "$out_dir"
     sha256sum "$(basename "$iso")" >"$(basename "$iso").sha256"
