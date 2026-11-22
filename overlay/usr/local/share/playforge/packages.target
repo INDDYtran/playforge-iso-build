@@ -83,6 +83,8 @@ lib32-vkd3d
 # --- Werkzeuge ---
 git
 rsync
+openssl
+flatpak
 btop
 nvtop
 fastfetch

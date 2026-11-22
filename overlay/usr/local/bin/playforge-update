@@ -18,6 +18,7 @@ set -Eeuo pipefail
 repo="${PLAYFORGE_UPDATE_REPO:-INDDYtran/playforge-iso-build}"
 base="${PLAYFORGE_UPDATE_BASE:-https://github.com/${repo}/releases/latest/download}"
 root="${PLAYFORGE_UPDATE_ROOT:-}"
+signing_pub="$root/usr/local/share/playforge/signing/update-signing.pub"
 
 state_dir="$root/var/lib/playforge"
 version_file="$root/etc/playforge/version"
@@ -54,6 +55,8 @@ allowed_prefixes=(
     "etc/systemd/zram-generator.conf"
     "etc/udev/rules.d/"
     "etc/xdg/"
+    # Btrfs-Snapshot-Hook für pacman
+    "usr/share/libalpm/hooks/"
     # Versionskennung
     "etc/playforge/"
 )
@@ -102,7 +105,7 @@ Umgebung:
   PLAYFORGE_UPDATE_BASE   abweichende Download-Basis (Datei-URL oder Mirror)
   PLAYFORGE_UPDATE_ROOT   Zielwurzel, nur für Tests
 
-Version: playforge-update 1.0
+Version: playforge-update 1.1
 EOF
 }
 
@@ -129,9 +132,51 @@ local_version() {
     fi
 }
 
+# Signaturprüfung mit dem ins Image eingebauten öffentlichen Schlüssel.
+# Prüfsumme und Archiv kommen aus derselben Quelle – erst die Signatur macht
+# daraus eine vertrauenswürdige Aussage.
+check_signature() {
+    local file="$1" sig="$2" label="$3"
+    if [[ ! -s "$signing_pub" ]]; then
+        printf 'Signaturschlüssel fehlt: %s\n' "$signing_pub" >&2
+        return 1
+    fi
+    if ! command -v openssl >/dev/null 2>&1; then
+        printf 'openssl fehlt – Signaturprüfung nicht möglich.\n' >&2
+        return 1
+    fi
+    if [[ ! -f "$sig" ]]; then
+        printf 'Signatur für %s fehlt.\n' "$label" >&2
+        return 1
+    fi
+    if ! openssl pkeyutl -verify -pubin -inkey "$signing_pub" -rawin \
+        -in "$file" -sigfile "$sig" >/dev/null 2>&1; then
+        printf 'Signatur für %s ist ungültig.\n' "$label" >&2
+        return 1
+    fi
+}
+
 remote_version() {
-    curl -fsSL --retry 3 --retry-delay 2 --max-time 30 \
-        "$base/playforge-update.version" 2>/dev/null | head -n1 | tr -d '[:blank:]' || true
+    local dir version
+    dir="$(mktemp -d)"
+    if ! curl -fsSL --retry 3 --retry-delay 2 --max-time 30 \
+        -o "$dir/playforge-update.version" "$base/playforge-update.version"; then
+        rm -rf -- "$dir"
+        return 1
+    fi
+    if ! curl -fsSL --retry 3 --retry-delay 2 --max-time 30 \
+        -o "$dir/playforge-update.version.sig" "$base/playforge-update.version.sig"; then
+        printf 'Signatur der Versionsdatei fehlt: %s/playforge-update.version.sig\n' "$base" >&2
+        rm -rf -- "$dir"
+        return 1
+    fi
+    if ! check_signature "$dir/playforge-update.version" "$dir/playforge-update.version.sig" "Version"; then
+        rm -rf -- "$dir"
+        return 1
+    fi
+    version="$(head -n1 "$dir/playforge-update.version" | tr -d '[:blank:]')"
+    rm -rf -- "$dir"
+    printf '%s\n' "$version"
 }
 
 require_root() {
@@ -264,7 +309,10 @@ do_update() {
     detail "Quelle" "$base"
     detail "Installiert" "$current"
 
-    remote="$(remote_version || true)"
+    if ! remote="$(remote_version)"; then
+        write_status error "" 0
+        die "Update-Metadaten fehlen oder sind nicht signiert – es wird nichts installiert."
+    fi
     if [[ -z "$remote" ]]; then
         write_status error "" 0
         die "Kein Update gefunden. Gibt es das Release 'system-update' in $repo?"
@@ -298,6 +346,13 @@ do_update() {
         -o "$tmp_dir/update.tar.gz" "$base/playforge-update.tar.gz"
     curl -fsSL --retry 3 --retry-delay 2 --max-time 60 \
         -o "$tmp_dir/update.tar.gz.sha256" "$base/playforge-update.tar.gz.sha256"
+    curl -fsSL --retry 3 --retry-delay 2 --max-time 60 \
+        -o "$tmp_dir/update.tar.gz.sig" "$base/playforge-update.tar.gz.sig"
+
+    if ! check_signature "$tmp_dir/update.tar.gz" "$tmp_dir/update.tar.gz.sig" "Update-Archiv"; then
+        die "Das Update-Archiv ist nicht korrekt signiert – es wird nichts installiert."
+    fi
+    detail "Signatur" "gültig"
 
     local expected actual
     expected="$(cut -d' ' -f1 "$tmp_dir/update.tar.gz.sha256")"

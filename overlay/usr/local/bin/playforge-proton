@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# Playforge – installiert GE-Proton in Steam, ohne AUR-Helfer.
+#
+#   playforge-proton                 neueste Version installieren
+#   playforge-proton --list          installierte Versionen zeigen
+#   playforge-proton --remove NAME   Version entfernen
+#   playforge-proton --dir PFAD      Steam-Verzeichnis erzwingen
+#
+# Das Skript lädt ausschließlich von den offiziellen GE-Proton-Releases und
+# prüft die SHA512-Prüfsumme, bevor etwas entpackt wird.
+set -Eeuo pipefail
+
+api="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases"
+action="install"
+version=""
+steam_dir="${STEAM_DIR:-}"
+
+die() {
+    printf 'Fehler: %s\n' "$*" >&2
+    exit 1
+}
+info() { printf '%s\n' "$*"; }
+
+usage() {
+    cat <<'EOF'
+Nutzung: playforge-proton [Option]
+
+  (ohne Option)     neueste GE-Proton-Version installieren
+  --list            installierte Versionen anzeigen
+  --remove NAME     installierte Version entfernen
+  --dir PFAD        Steam-Verzeichnis erzwingen
+  -h, --help        diese Hilfe
+
+Installiert wird nach <Steam>/compatibilitytools.d. Danach Steam neu starten
+und das Proton in den Spieleigenschaften auswählen. Root-Rechte sind nicht
+nötig.
+EOF
+}
+
+while (( $# > 0 )); do
+    case "$1" in
+        --list) action="list" ; shift ;;
+        --remove)
+            [[ $# -ge 2 ]] || die "--remove braucht einen Namen."
+            action="remove"; version="$2"; shift 2 ;;
+        --dir)
+            [[ $# -ge 2 ]] || die "--dir braucht einen Pfad."
+            steam_dir="$2"; shift 2 ;;
+        --version)
+            [[ $# -ge 2 ]] || die "--version braucht eine Kennung."
+            version="$2"; shift 2 ;;
+        -h | --help) usage; exit 0 ;;
+        *) die "Unbekannte Option: $1 (siehe --help)" ;;
+    esac
+done
+
+find_steam() {
+    local candidate
+    for candidate in \
+        "$HOME/.steam/steam" \
+        "$HOME/.local/share/Steam" \
+        "$HOME/.var/app/com.valvesoftware.Steam/data/Steam" \
+        "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam"; do
+        if [[ -d "$candidate/steamapps" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if [[ -z "$steam_dir" ]]; then
+    steam_dir="$(find_steam)" || die "Kein Steam-Verzeichnis gefunden. Mit --dir PFAD angeben."
+fi
+[[ -d "$steam_dir" ]] || die "Steam-Verzeichnis fehlt: $steam_dir"
+tools_dir="$steam_dir/compatibilitytools.d"
+
+case "$action" in
+    list)
+        [[ -d "$tools_dir" ]] || { info "Noch keine GE-Proton-Installation vorhanden."; exit 0; }
+        find "$tools_dir" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
+            LC_ALL=C sort
+        exit 0
+        ;;
+    remove)
+        [[ "$version" =~ ^GE-Proton[0-9A-Za-z._-]+$ ]] ||
+            die "Ungültiger Name: $version"
+        [[ -d "$tools_dir/$version" ]] || die "$version ist nicht installiert."
+        rm -rf -- "$tools_dir/$version"
+        info "Entfernt: $version"
+        info "Steam neu starten, damit die Auswahl verschwindet."
+        exit 0
+        ;;
+esac
+
+if [[ -z "$version" ]]; then
+    info "Suche neueste GE-Proton-Version …"
+    release_json="$(curl -fsSL --retry 3 --retry-delay 2 --max-time 60 \
+        -H 'Accept: application/vnd.github+json' "$api/latest")" ||
+        die "GitHub-API nicht erreichbar."
+    version="$(printf '%s\n' "$release_json" |
+        sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+    tarball_url="$(printf '%s\n' "$release_json" |
+        sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*GE-Proton[^"]*\.tar\.gz\)".*/\1/p' | head -n1)"
+else
+    tarball_url="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/$version/$version.tar.gz"
+fi
+
+[[ -n "$version" ]] || die "Version konnte nicht ermittelt werden."
+[[ -n "${tarball_url:-}" ]] || die "Kein GE-Proton-Archiv im Release gefunden."
+[[ "$version" =~ ^GE-Proton[0-9A-Za-z._-]+$ ]] || die "Unerwartete Versionskennung: $version"
+
+mkdir -p -- "$tools_dir"
+if [[ -d "$tools_dir/$version" ]]; then
+    info "$version ist bereits installiert:"
+    info "  $tools_dir/$version"
+    exit 0
+fi
+
+tmp="$(mktemp -d)"
+trap 'rm -rf -- "$tmp"' EXIT
+
+info "Lade $version …"
+archive="$tmp/$version.tar.gz"
+curl -fL --retry 3 --retry-delay 2 --max-time 900 -o "$archive" "$tarball_url" ||
+    die "Download fehlgeschlagen."
+
+sha_url="${tarball_url%/*}/$version.sha512sum"
+if curl -fsSL --retry 2 --max-time 60 -o "$tmp/$version.sha512sum" "$sha_url"; then
+    expected="$(awk -v f="$version.tar.gz" '$0 ~ f { print $1 }' "$tmp/$version.sha512sum" | head -n1)"
+    if [[ -z "$expected" ]]; then
+        expected="$(grep -oE '[0-9a-fA-F]{128}' "$tmp/$version.sha512sum" | head -n1)"
+    fi
+else
+    die "Prüfsummendatei fehlt: $sha_url"
+fi
+
+actual="$(sha512sum "$archive" | cut -d' ' -f1)"
+[[ -n "$expected" ]] || die "Prüfsumme konnte nicht gelesen werden."
+[[ "${expected,,}" == "${actual,,}" ]] ||
+    die "Prüfsumme stimmt nicht (erwartet $expected, erhalten $actual)."
+
+info "Entpacke …"
+tar -xzf "$archive" -C "$tmp" || die "Archiv konnte nicht entpackt werden."
+src="$tmp/$version"
+[[ -d "$src" ]] || src="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d -name 'GE-Proton*' -print -quit)"
+[[ -n "$src" && -d "$src" ]] || die "Archivinhalt unerwartet."
+
+mv -- "$src" "$tools_dir/$version"
+info ""
+info "Installiert: $tools_dir/$version"
+info "Steam neu starten und in den Spieleigenschaften unter"
+info "'Force the use of a specific Steam Play compatibility tool' auswählen."

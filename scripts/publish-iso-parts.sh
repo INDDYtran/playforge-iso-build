@@ -74,12 +74,19 @@ fi
         printf '| `%s` | %s |\n' "$(basename "$part")" "$(du -h "$part" | cut -f1)"
     done
     printf '| `%s.sha256` | Prüfsumme des ganzen ISO |\n' "$name"
+    printf '| `%s.sha256.sig` | Ed25519-Signatur der Prüfsumme |\n' "$name"
     printf '| `%s.parts.sha256` | Prüfsummen der Teile |\n' "$name"
     printf '| `REJOIN.txt` | Anleitung |\n\n'
     printf '```bash\n'
     printf 'cat %s.part-* > %s\n' "$name" "$name"
     printf 'sha256sum -c %s.sha256\n' "$name"
     printf 'sudo dd if=%s of=/dev/sdX bs=4M status=progress oflag=sync\n' "$name"
+    printf '```\n\n'
+    printf 'Prüfsummendatei prüfen (öffentlicher Schlüssel liegt im Repository unter\n'
+    printf '`overlay/usr/local/share/playforge/signing/update-signing.pub`):\n\n'
+    printf '```bash\n'
+    printf 'openssl pkeyutl -verify -pubin -inkey update-signing.pub -rawin \\\n'
+    printf '  -in %s.sha256 -sigfile %s.sha256.sig\n' "$name" "$name"
     printf '```\n\n'
     printf 'Nur die Teile herunterladen – einzelne Teile sind kein bootfähiges ISO.\n'
 } >"$out/RELEASE.md"

@@ -2,6 +2,89 @@
 # Playforge – Systemdiagnose für Gaming
 set -euo pipefail
 
+bundle=0
+case "${1:-}" in
+    --bundle) bundle=1 ;;
+    -h | --help)
+        cat <<'EOF'
+Nutzung: playforge-doctor [--bundle]
+
+  (ohne Option)  Systemcheck ausführen
+  --bundle       zusätzlich ein Support-Archiv mit Journal, dmesg, PCI- und
+                 Vulkan-Infos schreiben (Pfad steht am Ende)
+EOF
+        exit 0
+        ;;
+    "") ;;
+    *)
+        printf 'Unbekannte Option: %s (siehe --help)\n' "$1" >&2
+        exit 2
+        ;;
+esac
+
+if (( bundle )); then
+    # Der Check läuft im Kindprozess; sein Exit-Code bleibt erhalten.
+    tmp="$(mktemp -d)"
+    trap 'rm -rf -- "$tmp"' EXIT
+    if "$0" >"$tmp/doctor.txt" 2>&1; then
+        status=0
+    else
+        status=$?
+    fi
+
+    {
+        printf 'Playforge Support-Bundle\n'
+        printf 'Erstellt: %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        uname -a 2>/dev/null || true
+        printf '\n'
+        cat /etc/os-release 2>/dev/null || true
+        printf '\n'
+        printf 'Installierte Playforge-Version: '
+        cat /etc/playforge/version 2>/dev/null || echo unbekannt
+        printf '\n'
+        free -h 2>/dev/null || true
+        printf '\n'
+        df -h 2>/dev/null || true
+        printf '\n'
+        findmnt -no SOURCE,FSTYPE,OPTIONS / 2>/dev/null || true
+    } >"$tmp/system.txt" 2>&1
+
+    lspci -nnk >"$tmp/lspci.txt" 2>&1 || true
+    lsusb >"$tmp/lsusb.txt" 2>&1 || true
+    dmesg >"$tmp/dmesg.txt" 2>&1 || true
+    if command -v journalctl >/dev/null 2>&1; then
+        journalctl -b -n 800 --no-pager >"$tmp/journal.txt" 2>&1 || true
+    fi
+    if command -v vulkaninfo >/dev/null 2>&1; then
+        vulkaninfo --summary >"$tmp/vulkan.txt" 2>&1 || true
+    fi
+    if command -v pacman >/dev/null 2>&1; then
+        pacman -Q >"$tmp/pakete.txt" 2>&1 || true
+    fi
+
+    # Persönliche Pfade, Benutzer-, Host- und Gerätenamen entschärfen.
+    user_name="$(id -un 2>/dev/null || echo unknown)"
+    host_name="$(hostname 2>/dev/null || echo unknown)"
+    while IFS= read -r -d '' file; do
+        sed -i \
+            -e "s|${HOME}|<home>|g" \
+            -e "s|${user_name}|<user>|g" \
+            -e "s|${host_name}|<host>|g" \
+            -e 's|\([0-9a-fA-F]\{2\}:\)\{5\}[0-9a-fA-F]\{2\}|<mac>|g' \
+            "$file" 2>/dev/null || true
+    done < <(find "$tmp" -maxdepth 1 -type f -name '*.txt' -print0)
+
+    stamp="$(date -u +%Y%m%d-%H%M%S)"
+    out="${PLAYFORGE_BUNDLE_OUT:-$HOME/playforge-support-$stamp.tar.gz}"
+    tar -czf "$out" -C "$tmp" . || {
+        printf 'Support-Archiv konnte nicht geschrieben werden.\n' >&2
+        exit 1
+    }
+    printf '\nSupport-Archiv: %s\n' "$out"
+    printf 'Enthält System- und Journaldaten. Vor dem Teilen kurz hineinsehen.\n'
+    exit "$status"
+fi
+
 ok=0
 warnings=0
 failures=0
@@ -42,6 +125,8 @@ fi
 printf '  Kernel: %s\n' "$(uname -r)"
 if [[ "$(uname -r)" == *zen* ]]; then
     okmsg "linux-zen läuft"
+elif [[ "$(uname -r)" == *lts* ]]; then
+    warnmsg "LTS-Fallback-Kernel läuft (linux-zen prüfen)"
 else
     warnmsg "Nicht der linux-zen-Kernel (Gaming-Profil empfohlen)"
 fi
@@ -120,7 +205,7 @@ else
 fi
 
 section "Gaming-Stack"
-for tool in steam lutris gamemoderun mangohud gamescope goverlay; do
+for tool in steam lutris gamemoderun mangohud gamescope goverlay flatpak; do
     if command -v "$tool" >/dev/null 2>&1; then
         okmsg "$tool installiert"
     else
@@ -146,6 +231,18 @@ if [[ -n "$(zramctl --noheadings 2>/dev/null || true)" ]]; then
     okmsg "ZRAM aktiv"
 else
     warnmsg "ZRAM nicht aktiv (zram-generator prüfen)"
+fi
+
+section "Snapshots"
+if command -v btrfs >/dev/null 2>&1 && [[ "$(findmnt -no FSTYPE / 2>/dev/null || true)" == "btrfs" ]]; then
+    if mountpoint -q /run/playforge/btrfs 2>/dev/null; then
+        count="$(find /run/playforge/btrfs/@snapshots -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)"
+    else
+        count="$(btrfs subvolume list / 2>/dev/null | grep -c '@snapshots/' || true)"
+    fi
+    okmsg "Btrfs-Wurzel, Snapshots: ${count:-0}"
+else
+    printf '  Wurzel ist kein Btrfs – pacman-Snapshots sind nicht aktiv.\n'
 fi
 
 section "Ergebnis"

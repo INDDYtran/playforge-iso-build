@@ -1,0 +1,46 @@
+name: Alte ISO-Releases aufräumen
+
+# Nach jeder ISO-Veröffentlichung bleibt nur das neueste iso-* Release stehen.
+# system-update wird nie angefasst, weil playforge-update daran hängt.
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Playforge ISO veröffentlichen"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: playforge-iso-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Überholte ISO-Releases löschen
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+
+    steps:
+      - name: Ältere iso-* Releases entfernen
+        run: |
+          set -Eeuo pipefail
+          mapfile -t tags < <(
+            gh release list --repo "$REPO" --limit 100 \
+              --json tagName,createdAt \
+              --jq '[.[] | select(.tagName | startswith("iso-"))]
+                    | sort_by(.createdAt) | reverse | .[1:] | .[].tagName'
+          )
+          if (( ${#tags[@]} == 0 )); then
+            echo "Nur das aktuelle ISO-Release vorhanden – nichts zu tun."
+            exit 0
+          fi
+          for tag in "${tags[@]}"; do
+            [[ "$tag" == iso-* ]] || continue
+            echo "Lösche $tag samt Tag"
+            gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag
+          done

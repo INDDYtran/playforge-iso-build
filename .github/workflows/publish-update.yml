@@ -100,6 +100,22 @@ jobs:
             echo "| Dateien | \`$(tar -xzOf out/playforge-update.tar.gz manifest.tsv | wc -l)\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Update signieren
+        env:
+          SIGNING_KEY: ${{ secrets.PLAYFORGE_SIGNING_KEY }}
+        run: |
+          set -Eeuo pipefail
+          [[ -n "$SIGNING_KEY" ]] || {
+            echo "Secret PLAYFORGE_SIGNING_KEY fehlt – ohne Signatur wird nichts veröffentlicht." >&2
+            exit 1
+          }
+          key="$(mktemp)"
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$SIGNING_KEY" >"$key"
+          chmod 600 "$key"
+          PLAYFORGE_SIGNING_KEY_FILE="$key" bash scripts/sign-release-assets.sh \
+            out/playforge-update.tar.gz out/playforge-update.version
+
       - name: Release aktualisieren
         env:
           GH_TOKEN: ${{ github.token }}
@@ -115,7 +131,9 @@ jobs:
           gh release upload "$tag" \
             out/playforge-update.tar.gz \
             out/playforge-update.tar.gz.sha256 \
+            out/playforge-update.tar.gz.sig \
             out/playforge-update.version \
+            out/playforge-update.version.sig \
             --clobber
           gh release edit "$tag" --latest
           echo "" >> "$GITHUB_STEP_SUMMARY"

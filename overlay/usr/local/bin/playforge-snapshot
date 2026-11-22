@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# Playforge – legt vor Paketänderungen einen Btrfs-Snapshot des Wurzelsystems an.
+#
+#   playforge-snapshot            Snapshot jetzt anlegen
+#   playforge-snapshot --list     vorhandene Snapshots zeigen
+#   playforge-snapshot --auto     still für den pacman-Hook (Fehler blockieren
+#                                 keine Transaktion)
+#
+# Snapshots liegen im Top-Level-Subvolume unter @snapshots, also außerhalb von
+# @ und @home. Dadurch sind sie unabhängig vom laufenden System und lassen sich
+# mit playforge-rollback von einem Live-Medium zurückholen.
+set -Eeuo pipefail
+
+mode="manual"
+case "${1:-}" in
+    --auto) mode="auto" ;;
+    "" | --manual) mode="manual" ;;
+    --list | list) mode="list" ;;
+    -h | --help)
+        cat <<'EOF'
+Nutzung: playforge-snapshot [--auto | --list]
+
+  (ohne Option)  Snapshot des Wurzelsystems anlegen
+  --list         vorhandene Snapshots anzeigen
+  --auto         für den pacman-Hook: Fehler werden nur gemeldet
+
+Aufbewahrt werden die letzten 10 Snapshots
+(PLAYFORGE_SNAPSHOT_KEEP überschreibt das).
+EOF
+        exit 0
+        ;;
+        *)
+        printf 'Fehler: Unbekannte Option: %s (siehe --help)\n' "$1" >&2
+        exit 2
+        ;;
+    esac
+
+keep="${PLAYFORGE_SNAPSHOT_KEEP:-10}"
+[[ "$keep" =~ ^[0-9]+$ ]] && (( keep > 0 )) || keep=10
+mnt="${PLAYFORGE_SNAPSHOT_MOUNT:-/run/playforge/btrfs}"
+snapdir="$mnt/@snapshots"
+
+# Im Hook darf ein fehlendes btrfs oder ein Mountfehler pacman nie blockieren.
+fail() {
+    if [[ "$mode" == "auto" ]]; then
+        printf 'Playforge-Snapshot übersprungen: %s\n' "$*" >&2
+        exit 0
+    fi
+    printf 'Fehler: %s\n' "$*" >&2
+    exit 1
+}
+
+if (( EUID != 0 )); then
+    fail "bitte mit Administratorrechten ausführen (sudo playforge-snapshot)"
+fi
+command -v btrfs >/dev/null 2>&1 || fail "btrfs-progs ist nicht installiert."
+fstype="$(findmnt -no FSTYPE / 2>/dev/null || true)"
+[[ "$fstype" == "btrfs" ]] || fail "das Wurzelsystem ist kein btrfs ($fstype)."
+root_src="$(findmnt -no SOURCE / 2>/dev/null || true)"
+[[ -n "$root_src" ]] || fail "Gerät des Wurzelsystems nicht ermittelbar."
+
+mkdir -p -- "$mnt"
+mounted=0
+cleanup() {
+    if (( mounted )); then
+        umount -- "$mnt" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
+if ! mountpoint -q "$mnt"; then
+    mount -o subvolid=5 -- "$root_src" "$mnt" ||
+        fail "Top-Level-Subvolume von $root_src konnte nicht eingehängt werden."
+    mounted=1
+fi
+
+[[ -d "$mnt/@" ]] || fail "Subvolume @ wurde in $root_src nicht gefunden."
+if ! btrfs subvolume show "$snapdir" >/dev/null 2>&1; then
+    if [[ -e "$snapdir" ]]; then
+        fail "$snapdir existiert, ist aber kein Btrfs-Subvolume."
+    fi
+    btrfs subvolume create "$snapdir" >/dev/null ||
+        fail "@snapshots konnte nicht angelegt werden."
+fi
+
+if [[ "$mode" == "list" ]]; then
+    find "$snapdir" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null |
+        LC_ALL=C sort
+    exit 0
+fi
+
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+name="$stamp-$mode"
+[[ ! -e "$snapdir/$name" ]] || fail "Snapshot $name existiert bereits."
+btrfs subvolume snapshot -r "$mnt/@" "$snapdir/$name" >/dev/null ||
+    fail "Snapshot konnte nicht angelegt werden (Platz frei?)."
+
+# Alte Snapshots aufräumen – nur unser eigenes Namensschema anfassen.
+mapfile -t old < <(
+    find "$snapdir" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null |
+        grep -E '^[0-9]{8}T[0-9]{6}Z-(auto|manual)$' |
+        LC_ALL=C sort -r | tail -n +$((keep + 1))
+)
+for entry in "${old[@]}"; do
+    [[ -n "$entry" ]] || continue
+    btrfs subvolume delete "$snapdir/$entry" >/dev/null 2>&1 || true
+done
+
+printf 'Snapshot angelegt: @snapshots/%s\n' "$name"
+printf 'Aufbewahrt: %s (älteste werden automatisch entfernt)\n' "$keep"

@@ -126,6 +126,16 @@ systemctl enable playforge-profile.service
 systemctl enable playforge-update-check.timer
 systemctl set-default graphical.target
 
+info "Flathub"
+if command -v flatpak >/dev/null 2>&1; then
+    if ! flatpak remote-add --if-not-exists flathub \
+        https://flathub.org/repo/flathub.flatpakrepo; then
+        warn "Flathub konnte nicht eingerichtet werden (offline?)."
+    fi
+else
+    warn "flatpak ist nicht installiert – Flathub wird nicht eingerichtet."
+fi
+
 info "Boot-Splash"
 if pacman -Qq plymouth >/dev/null 2>&1; then
     if ! grep -qE '^HOOKS=\([^)]*\bplymouth\b' /etc/mkinitcpio.conf; then
@@ -145,6 +155,14 @@ if pacman -Qq plymouth >/dev/null 2>&1; then
     fi
 else
     warn "plymouth ist nicht installiert – das Zielsystem bootet ohne Splash."
+fi
+
+info "LTS-Fallback-Kernel"
+lts_kernel=0
+if pacman -S --noconfirm --needed linux-lts linux-lts-headers; then
+    lts_kernel=1
+else
+    warn "linux-lts konnte nicht installiert werden – kein Fallback-Kernel."
 fi
 
 info "Initramfs erzeugen"
@@ -181,6 +199,17 @@ EOF
         printf 'initrd /initramfs-linux-zen.img\n'
         printf 'options %s\n' "$kernel_options"
     } >/boot/loader/entries/playforge.conf
+    if (( lts_kernel )); then
+        {
+            printf 'title Playforge Linux (LTS-Fallback)\n'
+            printf 'linux /vmlinuz-linux-lts\n'
+            if [[ -n "$ucode" ]]; then
+                printf 'initrd /%s\n' "$ucode"
+            fi
+            printf 'initrd /initramfs-linux-lts.img\n'
+            printf 'options %s\n' "$kernel_options"
+        } >/boot/loader/entries/playforge-lts.conf
+    fi
 else
     if grep -q '^GRUB_TIMEOUT=' /etc/default/grub; then
         sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=3/' /etc/default/grub

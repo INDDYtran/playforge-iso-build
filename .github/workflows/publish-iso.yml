@@ -90,6 +90,23 @@ jobs:
           cp -- "$(dirname "$iso")"/smoke-test.log dist/release/ 2>/dev/null || true
           ls -lh dist/release
 
+      - name: Prüfsummen signieren
+        env:
+          SIGNING_KEY: ${{ secrets.PLAYFORGE_SIGNING_KEY }}
+        run: |
+          set -Eeuo pipefail
+          [[ -n "$SIGNING_KEY" ]] || {
+            echo "Secret PLAYFORGE_SIGNING_KEY fehlt – ohne Signatur wird nichts veröffentlicht." >&2
+            exit 1
+          }
+          key="$(mktemp)"
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$SIGNING_KEY" >"$key"
+          chmod 600 "$key"
+          mapfile -t sums < <(find dist/release -maxdepth 1 -name '*.sha256' -type f | LC_ALL=C sort)
+          (( ${#sums[@]} > 0 )) || { echo "Keine Prüfsummendatei gefunden." >&2; exit 1; }
+          PLAYFORGE_SIGNING_KEY_FILE="$key" bash scripts/sign-release-assets.sh "${sums[@]}"
+
       - name: Release anlegen und hochladen
         run: |
           set -Eeuo pipefail

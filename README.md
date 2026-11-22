@@ -20,7 +20,8 @@ abgestimmtes Paket- und Konfigurationsset mit.
 - **Tuning:** Sysctl-Profil, zram, GameMode-Konfiguration, MangoHud-Standardprofil,
   Shader-Cache-Limit, Gamecontroller-udev-Regeln, Leistungsprofile
 - **Werkzeuge:** `playforge-install`, `playforge-doctor`, `playforge-tweaks`,
-  `playforge-run`, `playforge-update`, `playforge-control-center`
+  `playforge-run`, `playforge-update`, `playforge-proton`,
+  `playforge-snapshot`, `playforge-rollback`, `playforge-control-center`
 
 ## Voraussetzungen für den Build
 
@@ -238,6 +239,16 @@ sha256sum -c playforge-*.iso.sha256
 sudo dd if=playforge.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
+Die Prüfsummendatei ist zusätzlich als `*.sha256.sig` signiert. Der
+öffentliche Schlüssel liegt im Repository unter
+`overlay/usr/local/share/playforge/signing/update-signing.pub`:
+
+```bash
+openssl pkeyutl -verify -pubin -inkey update-signing.pub -rawin \
+  -in playforge-2026.11.22-x86_64.iso.sha256 \
+  -sigfile playforge-2026.11.22-x86_64.iso.sha256.sig
+```
+
 Die Teile lassen sich auch einzeln über die Release-Seite herunterladen;
 `REJOIN.txt` im Release nennt Reihenfolge und Prüfsummen, `*.parts.sha256`
 prueft die Teile einzeln. Veröffentlicht wird automatisch von
@@ -261,7 +272,8 @@ Der Installer:
 3. formatiert ext4 oder btrfs (Subvolumes `@` und `@home`, zstd-Komprimierung),
 4. installiert das Paketset aus `packages.target` (Internet erforderlich),
 5. legt Benutzer, Locale, Tastatur, Hostname, zram und Dienste an,
-6. installiert systemd-boot (UEFI) bzw. GRUB (BIOS),
+6. installiert systemd-boot (UEFI) bzw. GRUB (BIOS) und einen
+   `linux-lts`-Fallback-Eintrag,
 7. installiert bei Bedarf den NVIDIA-Treiber.
 
 **Voraussetzungen:** 32 GB Datenträger (mehr für Spiele), Internetzugang,
@@ -280,6 +292,7 @@ im UEFI deaktivieren. Der DKMS-Build dauert bei der Installation einige Minuten.
 
 ```bash
 playforge-doctor                      # Systemcheck: Treiber, Vulkan, 32-Bit, Tuning
+playforge-doctor --bundle             # zusätzlich Support-Archiv schreiben
 playforge-tweaks status               # aktuelles Leistungsprofil
 sudo playforge-tweaks performance     # dauerhaft maximale CPU-Leistung
 sudo playforge-tweaks balanced        # ausgewogen (Standard)
@@ -287,7 +300,10 @@ sudo playforge-tweaks reset           # Profil entfernen
 ```
 
 Das Profil wird in `/etc/playforge/profile` gespeichert und beim Booten von
-`playforge-profile.service` angewendet.
+`playforge-profile.service` angewendet. Für Supportfälle sammelt
+`playforge-doctor --bundle` Journal, dmesg, PCI-, USB-, Vulkan- und
+Paketinfos in einem Archiv und entschärft Benutzer-, Host- und Gerätenamen.
+Der Pfad steht am Ende; vor dem Teilen hineinsehen.
 
 ### Systemupdate ohne neues ISO
 
@@ -306,8 +322,8 @@ sudo playforge-update --rollback  # letzte Sicherung zurückholen
 Ablauf: Das Skript liest `playforge-update.version` aus dem Release
 `system-update` (`releases/latest` von `INDDYtran/playforge-iso-build`),
 vergleicht sie mit `/etc/playforge/version`, lädt `playforge-update.tar.gz`
-samt Prüfsumme, prüft **jede** Datei gegen das mitgelieferte Manifest und
-schreibt erst dann. Vorher sichert es die betroffenen Dateien samt Rechten
+samt Prüfsumme und Signatur, prüft **jede** Datei gegen das mitgelieferte
+Manifest und schreibt erst dann. Vorher sichert es die betroffenen Dateien samt Rechten
 unter `/var/lib/playforge/backups` (die letzten drei Stände). Dateien, die aus
 dem Projekt verschwunden sind, werden entfernt.
 
@@ -337,6 +353,47 @@ bei Änderungen an `overlay/` oder `control-center/` und manuell über
 Overlay und Binary zu `playforge-update.tar.gz` (mit `manifest.tsv`) und lädt
 Archiv, Prüfsumme und Version in das Release `system-update`. Paketupdates
 (pacman, Flatpak) macht dieses Werkzeug bewusst nicht.
+
+### Signaturen
+
+`playforge-update.version` und `playforge-update.tar.gz` werden mit einem
+Ed25519-Schlüssel signiert (`*.sig`). Der öffentliche Schlüssel liegt im Image
+unter `/usr/local/share/playforge/signing/update-signing.pub`; der Updater
+prüft beide Signaturen, bevor er die Prüfsumme auswertet oder etwas schreibt.
+Fehlt eine Signatur oder passt sie nicht, bricht er ab – auch bei `--check`.
+Die Prüfsumme allein käme aus derselben Quelle wie das Archiv und würde einen
+übernommenen Repository-Zugang nicht erkennen.
+
+Schlüsselrotation: neues Paar mit `scripts/generate-signing-key.sh` erzeugen,
+den öffentlichen Schlüssel ins Image legen und ein Update **mit dem alten
+Schlüssel** veröffentlichen (Secret noch nicht tauschen). Erst nach diesem
+Release das Repository-Secret `PLAYFORGE_SIGNING_KEY` auf den neuen privaten
+Schlüssel setzen. Der private Schlüssel gehört nie ins Repository.
+
+### Snapshots und Rollback (btrfs)
+
+Auf btrfs legt ein pacman-Hook vor jeder Pakettransaktion einen
+schreibgeschützten Snapshot des Wurzelsystems an (`playforge-snapshot`,
+Aufbewahrung: 10). Die Snapshots liegen im Top-Level-Subvolume unter
+`@snapshots`, also außerhalb von `@` und `@home`.
+
+```bash
+sudo playforge-snapshot --list
+sudo playforge-snapshot          # zusätzlicher Snapshot von Hand
+```
+
+Zurückholen geht nur von einem Live-Medium, weil das laufende
+Wurzel-Subvolume nicht ersetzt werden kann:
+
+```bash
+sudo mount -o subvolid=5 /dev/nvme0n1p2 /mnt
+sudo playforge-rollback --root /mnt --list
+sudo playforge-rollback --root /mnt --restore 20261122T120000Z-auto
+```
+
+Das bisherige `@` bleibt als `@pre-rollback-<zeit>` erhalten, `@home` wird
+nicht angefasst. Auf ext4 sind keine Snapshots verfügbar; der Hook läuft dort
+ins Leere.
 
 ### Playforge-Theme
 
@@ -444,6 +501,26 @@ playforge-run --no-gamemode --hud -- ...  # nur MangoHud
 playforge-run --gamescope --resolution 2560x1440 -- %command%
 ```
 
+### GE-Proton und Flathub
+
+GE-Proton lässt sich ohne AUR installieren:
+
+```bash
+playforge-proton                          # neueste Version nach Steam
+playforge-proton --list
+playforge-proton --remove GE-Proton10-1
+```
+
+Das Skript lädt nur von den offiziellen GE-Proton-Releases und prüft die
+SHA512-Prüfsumme. Danach Steam neu starten und das Proton in den
+Spieleigenschaften auswählen. Flathub ist im installierten System als
+System-Remote eingerichtet, damit auch Heroic, Bottles oder ProtonUp-Qt ohne
+AUR funktionieren:
+
+```bash
+flatpak install flathub com.heroicgameslauncher.hgl
+```
+
 ### Was das Tuning macht
 
 | Datei | Wirkung |
@@ -472,6 +549,8 @@ scripts/
   build-iso-container.sh     Lokaler Docker-/Podman-Build
   build-control-center.sh    Control Center (Rust) lokal bauen
   pack-update.sh             Systemupdate-Archiv für das GitHub-Release bauen
+  sign-release-assets.sh     Release-Dateien mit Ed25519 signieren
+  generate-signing-key.sh    neues Signaturschlüsselpaar erzeugen
   container-entrypoint.sh    Build, Verify, Boot-Test und BUILD-INFO im Container
   verify-iso.sh              BIOS-/UEFI-/Kernel-/SquashFS-Prüfung
   boot-smoke-test.sh         QEMU/OVMF-Boottest mit serieller Konsole
@@ -484,7 +563,8 @@ profile/                     Overlay auf das archiso-Releng-Profil
 overlay/                     Dateien für Live-System *und* Installation
   etc/                       pacman.conf (multilib), Sysctl, zram, GameMode, udev, skel
   etc/xdg/                   KDE-Standardwerte und Theme-Autostart
-  usr/local/bin/             playforge-install/-doctor/-tweaks/-run/-theme
+  usr/local/bin/             playforge-install/-doctor/-tweaks/-run/-theme,
+                             playforge-proton, playforge-snapshot/-rollback
   usr/local/lib/playforge/   configure-target.sh, control-helper.sh, Theme-Skripte
   usr/local/share/playforge/ Paketliste des Zielsystems
   usr/share/                 Theme, Wallpaper, Farbschema, Icons, Logo,
@@ -499,11 +579,14 @@ nicht versioniert.
 - Nur x86_64.
 - Installation benötigt Internet (kein Offline-Installer).
 - Keine LUKS-Verschlüsselung und kein Dual-Boot-Resize im Installer (gesamte Platte).
-- Kein Secure-Boot-Signing, keine Snapshots/Rollback-Einrichtung.
-- Kein eigenes Paket-Repository; AUR ist nicht vorkonfiguriert. Für AUR-Helfer
-  (z. B. `paru`) und AUR-Pakete wie `protonup-qt`, `heroic-games-launcher-bin`
-  oder `vkbasalt` (nicht mehr in den offiziellen Repos) muss der AUR manuell
-  eingerichtet werden.
+- Kein Secure-Boot-Signing.
+- Snapshots gibt es nur auf btrfs und sie werden vor pacman-Transaktionen
+  angelegt; zurückholen geht über ein Live-Medium (`playforge-rollback`), nicht
+  aus dem laufenden System. Der Installer richtet dafür kein eigenes
+  Snapshot-Werkzeug ein.
+- Kein eigenes Paket-Repository; AUR ist nicht vorkonfiguriert. GE-Proton
+  (`playforge-proton`) und Flathub sind vorbereitet, für andere AUR-Pakete wie
+  `vkbasalt` muss der AUR weiterhin manuell eingerichtet werden.
 - Der Live-Desktop läuft bei NVIDIA ohne proprietären Treiber (nouveau/NVK).
 - Der automatische Boot-Test prüft nur den Abschluss des Live-Setups über einen
   seriellen Marker; Grafik, GPU-Treiber, Audio und der Installer werden in QEMU

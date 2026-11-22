@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Playforge – holt ein Btrfs-Snapshot des Wurzelsystems zurück.
+#
+# Läuft bewusst nur von einem Live-Medium oder Rettungssystem aus: Das laufende
+# Wurzel-Subvolume lässt sich nicht im Betrieb ersetzen.
+#
+#   sudo mount -o subvolid=5 /dev/nvme0n1p2 /mnt
+#   sudo playforge-rollback --root /mnt --list
+#   sudo playforge-rollback --root /mnt --restore 20261122T120000Z-auto
+#
+# @home bleibt unangetastet. Das bisherige @ wird nach @pre-rollback-<zeit>
+# umbenannt und kann später mit `btrfs subvolume delete` entfernt werden.
+set -Eeuo pipefail
+
+usage() {
+    cat <<'EOF'
+Nutzung: playforge-rollback --root <verzeichnis> [--list | --restore <name>]
+
+  --root DIR    eingehängtes Btrfs-Top-Level-Subvolume (subvolid=5)
+  --list        vorhandene Snapshots anzeigen
+  --restore N   Snapshot N als neues @ einsetzen
+
+Beispiel:
+  sudo mount -o subvolid=5 /dev/nvme0n1p2 /mnt
+  sudo playforge-rollback --root /mnt --list
+  sudo playforge-rollback --root /mnt --restore 20261122T120000Z-auto
+EOF
+}
+
+die() {
+    printf 'Fehler: %s\n' "$*" >&2
+    exit 1
+}
+
+root=""
+action=""
+name=""
+while (( $# > 0 )); do
+    case "$1" in
+        --root)
+            [[ $# -ge 2 ]] || die "--root braucht ein Verzeichnis."
+            root="$2"
+            shift 2
+            ;;
+        --list)
+            action="list"
+            shift
+            ;;
+        --restore)
+            [[ $# -ge 2 ]] || die "--restore braucht einen Snapshot-Namen."
+            action="restore"
+            name="$2"
+            shift 2
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *) die "Unbekannte Option: $1 (siehe --help)" ;;
+    esac
+done
+
+[[ -n "$root" ]] || {
+    usage >&2
+    exit 2
+}
+[[ "$root" != "/" ]] || die "Nicht auf dem laufenden System ausführen – Live-Medium verwenden."
+[[ -d "$root" ]] || die "Zielverzeichnis fehlt: $root"
+command -v btrfs >/dev/null 2>&1 || die "btrfs-progs ist nicht installiert."
+
+root="${root%/}"
+snapdir="$root/@snapshots"
+[[ -d "$root/@" ]] || die "$root/@ ist kein Btrfs-Subvolume."
+btrfs subvolume show "$root/@" >/dev/null 2>&1 ||
+    die "$root/@ ist kein Btrfs-Subvolume (Top-Level mit subvolid=5 einhängen?)."
+[[ -d "$snapdir" ]] || die "Keine Snapshots unter $snapdir."
+if mountpoint -q "$root/@"; then
+    die "$root/@ ist eingehängt – bitte zuerst aushängen."
+fi
+
+list_snapshots() {
+    find "$snapdir" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null |
+        grep -E '^[0-9]{8}T[0-9]{6}Z-(auto|manual)$' |
+        LC_ALL=C sort -r || true
+}
+
+if [[ "$action" == "list" || -z "$action" ]]; then
+    printf 'Snapshots unter %s:\n' "$snapdir"
+    list_snapshots
+    exit 0
+fi
+
+[[ "$name" =~ ^[0-9]{8}T[0-9]{6}Z-(auto|manual)$ ]] ||
+    die "Ungültiger Snapshot-Name: $name"
+[[ -d "$snapdir/$name" ]] || die "Snapshot nicht gefunden: $name"
+btrfs subvolume show "$snapdir/$name" >/dev/null 2>&1 ||
+    die "$name ist kein Btrfs-Subvolume."
+
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+old="$root/@pre-rollback-$stamp"
+[[ ! -e "$old" ]] || die "Zielname existiert bereits: $old"
+
+printf 'Ersetze @ durch @snapshots/%s\n' "$name"
+mv -- "$root/@" "$old" || die "@ konnte nicht umbenannt werden."
+if ! btrfs subvolume snapshot "$snapdir/$name" "$root/@" >/dev/null; then
+    mv -- "$old" "$root/@" 2>/dev/null || true
+    die "Snapshot konnte nicht als @ eingesetzt werden – alter Stand wiederhergestellt."
+fi
+
+printf '\nFertig. Bisheriger Stand: %s\n' "$old"
+printf 'Neu booten. Wenn alles läuft, alten Stand entfernen:\n'
+printf '  sudo mount -o subvolid=5 <gerät> /mnt\n'
+printf '  sudo btrfs subvolume delete /mnt/@pre-rollback-%s\n' "$stamp"
+printf '\n@home wurde nicht verändert.\n'
