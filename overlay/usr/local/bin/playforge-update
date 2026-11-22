@@ -39,6 +39,8 @@ allowed_prefixes=(
     "usr/share/icons/Playforge/"
     "usr/share/icons/hicolor/scalable/apps/"
     "usr/share/pixmaps/"
+    "usr/share/plymouth/themes/playforge/"
+    "etc/plymouth/"
     "usr/share/plasma/look-and-feel/org.playforge.desktop/"
     "usr/share/wallpapers/Playforge/"
     # Systemkonfiguration, die Playforge selbst mitbringt

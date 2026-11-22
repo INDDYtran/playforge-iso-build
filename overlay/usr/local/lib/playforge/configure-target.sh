@@ -126,6 +126,27 @@ systemctl enable playforge-profile.service
 systemctl enable playforge-update-check.timer
 systemctl set-default graphical.target
 
+info "Boot-Splash"
+if pacman -Qq plymouth >/dev/null 2>&1; then
+    if ! grep -qE '^HOOKS=\([^)]*\bplymouth\b' /etc/mkinitcpio.conf; then
+        sed -i -E 's/^HOOKS=\(base udev /HOOKS=(base udev plymouth /' /etc/mkinitcpio.conf
+    fi
+    if ! grep -qE '^HOOKS=\([^)]*\bplymouth\b' /etc/mkinitcpio.conf; then
+        warn "Plymouth-Hook konnte nicht in /etc/mkinitcpio.conf eingetragen werden."
+    fi
+    if ! grep -qF 'plymouth/themes/playforge/playforge.script' /etc/mkinitcpio.conf; then
+        {
+            printf '\n# Playforge: Splash-Theme in die Initramfs aufnehmen.\n'
+            printf 'FILES+=(/usr/share/plymouth/themes/playforge/playforge.script'
+            printf ' /usr/share/plymouth/themes/playforge/playforge.plymouth'
+            printf ' /usr/share/plymouth/themes/playforge/background.png'
+            printf ' /usr/share/plymouth/themes/playforge/background-glow.png)\n'
+        } >>/etc/mkinitcpio.conf
+    fi
+else
+    warn "plymouth ist nicht installiert – das Zielsystem bootet ohne Splash."
+fi
+
 info "Initramfs erzeugen"
 mkinitcpio -P
 
@@ -147,7 +168,7 @@ EOF
     if grep -qm1 'AuthenticAMD' /proc/cpuinfo; then
         ucode="amd-ucode.img"
     fi
-    kernel_options="root=UUID=$ROOT_UUID rw nowatchdog"
+    kernel_options="root=UUID=$ROOT_UUID rw nowatchdog splash quiet loglevel=3"
     if [[ "$BTRFS" == "1" ]]; then
         kernel_options+=" rootflags=subvol=@"
     fi
@@ -167,9 +188,9 @@ else
         printf 'GRUB_TIMEOUT=3\n' >>/etc/default/grub
     fi
     if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub; then
-        sed -i 's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="nowatchdog"|' /etc/default/grub
+        sed -i 's|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT="nowatchdog splash quiet loglevel=3"|' /etc/default/grub
     else
-        printf 'GRUB_CMDLINE_LINUX_DEFAULT="nowatchdog"\n' >>/etc/default/grub
+        printf 'GRUB_CMDLINE_LINUX_DEFAULT="nowatchdog splash quiet loglevel=3"\n' >>/etc/default/grub
     fi
     if [[ "$BTRFS" == "1" ]]; then
         if grep -q '^GRUB_CMDLINE_LINUX=' /etc/default/grub; then

@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Playforge
+Description=Playforge – bernsteinfarbene Esse auf Eisen
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/playforge
+ScriptFile=/usr/share/plymouth/themes/playforge/playforge.script

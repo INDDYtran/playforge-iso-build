@@ -7,6 +7,7 @@ base
 base-devel
 archlinux-keyring
 sudo
+plymouth
 mkinitcpio
 linux-zen
 linux-zen-headers

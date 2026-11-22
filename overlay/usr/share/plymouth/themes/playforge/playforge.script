@@ -1,0 +1,45 @@
+# Playforge – Boot-Splash
+#
+# Zwei vorgerenderte Frames werden überblendet, damit die Glut hinter dem Logo
+# atmet. Das Theme skaliert nur die beiden Vollbilder und erzeugt keinen Text:
+# der Ablauf bleibt damit unabhängig von Schriftarten und auch dann stabil,
+# wenn plymouth ohne DRM-Gerät startet.
+
+Window.SetBackgroundTopColor (0.039, 0.031, 0.024);
+Window.SetBackgroundBottomColor (0.071, 0.047, 0.027);
+
+screen_width = Window.GetWidth ();
+screen_height = Window.GetHeight ();
+
+base = Image ("background.png");
+base = base.Scale (screen_width, screen_height);
+base_sprite = Sprite (base);
+base_sprite.SetX (0);
+base_sprite.SetY (0);
+base_sprite.SetZ (0);
+
+glow = Image ("background-glow.png");
+glow = glow.Scale (screen_width, screen_height);
+glow_sprite = Sprite (glow);
+glow_sprite.SetX (0);
+glow_sprite.SetY (0);
+glow_sprite.SetZ (10);
+glow_sprite.SetOpacity (0);
+
+pulse = 0;
+step = 0.014;
+
+fun breathe () {
+        pulse = pulse + step;
+        if (pulse > 1) {
+                pulse = 1;
+                step = 0 - step;
+        }
+        if (pulse < 0) {
+                pulse = 0;
+                step = 0 - step;
+        }
+        glow_sprite.SetOpacity (pulse);
+}
+
+Plymouth.SetRefreshFunction (breathe);

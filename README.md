@@ -357,6 +357,21 @@ Das Theme lässt sich wie jedes globale KDE-Theme unter
 *Systemeinstellungen → Erscheinungsbild → Globales Design* wechseln; die
 Playforge-Varianten bleiben dort auswählbar.
 
+### Boot-Splash
+
+Der Start ist von der Initramfs bis zum Login durchgehend gebrandet:
+Plymouth zeigt das Playforge-Logo auf dem Noir-Grid mit atmender Glut
+(`/usr/share/plymouth/themes/playforge`), das BIOS-Bootmenü nutzt dieselbe
+Grafik und SDDM sowie der Plasma-Splash setzen das Design fort. `build.sh`
+trägt den `plymouth`-Hook in die archiso-Konfiguration ein, nimmt das Theme
+über `FILES=` mit in die Initramfs und prüft anschließend, dass es dort
+ankommt. Der Installer (`configure-target.sh`) richtet Hook und Kernelzeile
+(`splash quiet loglevel=3`) auch im Zielsystem ein; `playforge-update`
+liefert Theme-Änderungen an bestehende Installationen nach.
+
+Splash dauerhaft abschalten: `splash` aus der Kernelzeile entfernen
+(systemd-boot: `/boot/loader/entries/*.conf`, GRUB: `GRUB_CMDLINE_LINUX_DEFAULT`).
+
 ### Playforge Control Center
 
 `playforge-control-center` bündelt Systemstatus und Einstellungen in einer

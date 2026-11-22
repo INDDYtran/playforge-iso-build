@@ -88,6 +88,43 @@ install -d "$overlay_root/etc/playforge"
 printf '%s\n' "$playforge_version" >"$overlay_root/etc/playforge/version"
 chmod 0644 "$overlay_root/etc/playforge/version"
 
+# Boot-Splash: Das Plymouth-Theme liegt im Overlay und muss mit in die
+# Initramfs, damit das Logo schon vor dem Umschalten auf das echte
+# Wurzeldateisystem sichtbar ist. archiso bringt seine HOOKS in
+# /etc/mkinitcpio.conf.d/archiso.conf mit – dort wird der Hook ergänzt.
+msg "Aktiviere Plymouth-Boot-Splash"
+plymouth_rel=/usr/share/plymouth/themes/playforge
+plymouth_dir="$profile_dir/airootfs$plymouth_rel"
+for asset in playforge.plymouth playforge.script background.png background-glow.png; do
+    [[ -f "$plymouth_dir/$asset" ]] ||
+        die "Plymouth-Theme unvollständig: $plymouth_rel/$asset fehlt."
+done
+
+hooks_found=0
+while IFS= read -r -d '' conf; do
+    grep -q '^HOOKS=' "$conf" || continue
+    if ! grep -qE '^HOOKS=\([^)]*\bplymouth\b' "$conf"; then
+        sed -i -E 's/^HOOKS=\(base udev /HOOKS=(base udev plymouth /' "$conf"
+    fi
+    grep -qE '^HOOKS=\([^)]*\bplymouth\b' "$conf" ||
+        die "Plymouth-Hook konnte in $conf nicht eingetragen werden."
+    if ! grep -qF "$plymouth_rel/playforge.script" "$conf"; then
+        {
+            printf '\n# Playforge: Splash-Theme in die Initramfs aufnehmen.\n'
+            printf 'FILES+=(%s/playforge.script %s/playforge.plymouth %s/background.png %s/background-glow.png)\n' \
+                "$plymouth_rel" "$plymouth_rel" "$plymouth_rel" "$plymouth_rel"
+        } >>"$conf"
+    fi
+    hooks_found=1
+done < <(find "$profile_dir/airootfs/etc" -type f \
+    \( -name 'mkinitcpio.conf' -o -path '*mkinitcpio.conf.d/*.conf' \) -print0 2>/dev/null)
+(( hooks_found )) || die "Keine mkinitcpio-Konfiguration mit HOOKS= gefunden."
+
+splash_png="$repo_dir/overlay/usr/local/share/playforge/branding/syslinux-splash.png"
+if [[ -f "$splash_png" && -f "$profile_dir/syslinux/splash.png" ]]; then
+    install -m 0644 "$splash_png" "$profile_dir/syslinux/splash.png"
+fi
+
 msg "Baue Control Center (Rust)"
 cc_dir="$repo_dir/control-center"
 if command -v cargo >/dev/null 2>&1; then
@@ -158,6 +195,15 @@ ln -sfn /usr/lib/systemd/system/sddm.service \
 
 msg "Starte mkarchiso (das dauert je nach Hardware 20–60 Minuten)"
 mkarchiso -v -w "$work_dir" -o "$out_dir" "$profile_dir"
+
+if command -v lsinitcpio >/dev/null 2>&1; then
+    initramfs="$(find "$work_dir" -type f -name 'initramfs-linux.img' -print -quit 2>/dev/null || true)"
+    if [[ -n "$initramfs" ]]; then
+        lsinitcpio "$initramfs" | grep -qF 'plymouth/themes/playforge/background.png' ||
+            die "Plymouth-Theme fehlt in der erzeugten Initramfs: $initramfs"
+        msg "Plymouth-Theme ist in der Initramfs enthalten"
+    fi
+fi
 
 iso="$(find "$out_dir" -maxdepth 1 -type f -name 'playforge-*.iso' -printf '%T@ %p\n' | sort -n | tail -n1 | cut -d' ' -f2-)"
 [[ -n "$iso" && -f "$iso" ]] || die "Kein ISO in $out_dir gefunden."
