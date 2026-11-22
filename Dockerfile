@@ -70,6 +70,7 @@ RUN set -eux; \
         sync_repos; \
     fi; \
     pacman -S --needed --noconfirm archiso qemu-system-x86 edk2-ovmf \
+        grub mtools dosfstools \
         rust gcc pkgconf wayland libxkbcommon libx11 libxcursor libxrandr libxi; \
     pacman -Scc --noconfirm; \
     sync_repos
