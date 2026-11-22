@@ -1,0 +1,17 @@
+# Playforge – Dateibrowser (Rust/egui)
+pkgname=playforge-files
+pkgver=${PLAYFORGE_PKGVER:?PLAYFORGE_PKGVER fehlt}
+pkgrel=1
+pkgdesc="Playforge Dateibrowser mit Vorschau, Suche und Papierkorb"
+arch=('x86_64')
+url="https://github.com/INDDYtran/playforge-iso-build"
+license=('custom')
+depends=('glibc' 'gcc-libs' 'libxkbcommon' 'wayland' 'libx11' 'libxcursor' 'libxrandr' 'libxi')
+optdepends=('xdg-utils: Dateien mit Standardprogrammen öffnen'
+            'glib2: Löschen in den Papierkorb über gio'
+            'trash-cli: Löschen in den Papierkorb über trash-put')
+options=('!strip')
+
+package() {
+    cp -a -- "$startdir/stage/." "$pkgdir/"
+}

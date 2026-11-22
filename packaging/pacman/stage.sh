@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Playforge – verteilt Overlay-Dateien und das Control-Center-Binary auf die
+# Playforge – verteilt Overlay-Dateien und die Rust-Binaries auf die
 # Paket-Staging-Verzeichnisse. Wird von build-repo.sh und check-coverage.sh
 # aufgerufen.
 #
 #   PLAYFORGE_CONTROL_CENTER=/pfad/playforge-control-center \
+#   PLAYFORGE_FILE_BROWSER=/pfad/playforge-files \
 #       bash packaging/pacman/stage.sh
 set -Eeuo pipefail
 
@@ -11,6 +12,7 @@ repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 base="$repo_dir/packaging/pacman"
 overlay="$repo_dir/overlay"
 cc="${PLAYFORGE_CONTROL_CENTER:-}"
+fb="${PLAYFORGE_FILE_BROWSER:-}"
 
 die() {
     printf 'Fehler: %s\n' "$*" >&2
@@ -23,7 +25,8 @@ die() {
 rm -rf -- \
     "$base/playforge-tools/stage" \
     "$base/playforge-theme/stage" \
-    "$base/playforge-control-center/stage"
+    "$base/playforge-control-center/stage" \
+    "$base/playforge-files/stage"
 
 # ---------------------------------------------------------------- tools
 tools="$base/playforge-tools/stage"
@@ -90,8 +93,21 @@ install -Dm0644 "$overlay/usr/share/applications/org.playforge.controlcenter.des
 install -Dm0644 "$overlay/usr/share/icons/hicolor/scalable/apps/org.playforge.controlcenter.svg" \
     "$ccstage/usr/share/icons/hicolor/scalable/apps/org.playforge.controlcenter.svg"
 
+# ---------------------------------------------------------------- file browser
+fbstage="$base/playforge-files/stage"
+mkdir -p "$fbstage/usr/local/bin" "$fbstage/usr/share/applications" \
+    "$fbstage/usr/share/icons/hicolor/scalable/apps"
+if [[ -n "$fb" ]]; then
+    [[ -f "$fb" ]] || die "PLAYFORGE_FILE_BROWSER ist keine Datei: $fb"
+    install -Dm0755 "$fb" "$fbstage/usr/local/bin/playforge-files"
+fi
+install -Dm0644 "$overlay/usr/share/applications/org.playforge.files.desktop" \
+    "$fbstage/usr/share/applications/org.playforge.files.desktop"
+install -Dm0644 "$overlay/usr/share/icons/hicolor/scalable/apps/org.playforge.files.svg" \
+    "$fbstage/usr/share/icons/hicolor/scalable/apps/org.playforge.files.svg"
+
 printf 'Staging fertig:\n'
-for dir in playforge-tools playforge-theme playforge-control-center; do
+for dir in playforge-tools playforge-theme playforge-control-center playforge-files; do
     printf '  %-26s %s Dateien\n' "$dir" \
         "$(find "$base/$dir/stage" -type f | wc -l)"
 done

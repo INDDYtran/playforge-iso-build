@@ -64,6 +64,6 @@ printf '\n'
 
 cat "$tmp/info"
 pacman -Sw --config "$tmp/pacman.conf" --nodeps --nodeps --noconfirm \
-    playforge-tools playforge-theme playforge-control-center
+    playforge-tools playforge-theme playforge-control-center playforge-files
 
 printf '\nVeröffentlichte Paketquelle ist signiert und nutzbar.\n'

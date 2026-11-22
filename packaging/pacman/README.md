@@ -8,6 +8,7 @@ pacman-Pakete:
 | `playforge-tools` | Skripte, systemd-Units, Konfiguration, Snapshot-Hook, Repository-Schlüssel |
 | `playforge-theme` | KDE-Theme, Wallpaper, Plymouth-, SDDM- und Bootmenü-Grafik |
 | `playforge-control-center` | Rust-Binary, Desktop-Eintrag und Icon |
+| `playforge-files` | Dateibrowser-Binary, Desktop-Eintrag und Icon |
 
 Damit gibt es Versionen, Abhängigkeiten, `pacman -Syu`, Downgrade über den
 Paketcache oder eine ältere Datei aus der Quelle — und keine Dateien mehr, die
@@ -22,7 +23,7 @@ nur per Tar-Overlay ersetzt werden.
 
 `playforge-repo-enable` bringt den öffentlichen Schlüssel eingebettet mit (damit die Migration auch mit dem alten Tar-Updater klappt), importiert ihn, hängt
 `Include = /etc/pacman.d/playforge.conf` an `/etc/pacman.conf` an und
-installiert die drei Pakete. Auf einer frischen Installation ruft
+installiert die vier Pakete. Auf einer frischen Installation ruft
 `configure-target.sh` das automatisch auf. Auf bestehenden Systemen einmalig:
 
 ```bash
@@ -54,10 +55,10 @@ sudo pacman -U https://inddytran.github.io/playforge-iso-build/x86_64/playforge-
 ## Bauen und veröffentlichen
 
 `.github/workflows/publish-pacman.yml` baut bei Änderungen an `overlay/`,
-`control-center/` oder `packaging/pacman/`:
+`control-center/`, `file-browser/` oder `packaging/pacman/`:
 
-1. das Control Center mit Cargo,
-2. die drei Pakete mit `makepkg`,
+1. Control Center und Dateibrowser mit Cargo,
+2. die vier Pakete mit `makepkg`,
 3. die signierte Datenbank mit `repo-add --sign`,
 4. prüft DB- und Paketsignaturen lokal mit pacman,
 5. schreibt die Pakete und die Datenbank in den Branch `gh-pages`,

@@ -61,8 +61,8 @@ usage() {
 Nutzung: playforge-repo-enable [--no-install]
 
 Richtet die signierte Playforge-Paketquelle in /etc/pacman.conf ein, importiert
-den Repository-Schlüssel und installiert playforge-tools, playforge-theme und
-playforge-control-center. Danach laufen Updates über:
+den Repository-Schlüssel und installiert playforge-tools, playforge-theme,
+playforge-control-center und playforge-files. Danach laufen Updates über:
 
   sudo pacman -Syu
 
@@ -160,9 +160,11 @@ if (( install_packages )); then
         --overwrite '/usr/share/wallpapers/Playforge/*' \
         --overwrite '/usr/share/icons/Playforge/*' \
         --overwrite '/usr/share/icons/hicolor/scalable/apps/org.playforge.controlcenter.svg' \
+        --overwrite '/usr/share/icons/hicolor/scalable/apps/org.playforge.files.svg' \
         --overwrite '/usr/share/color-schemes/Playforge.colors' \
         --overwrite '/usr/share/pixmaps/playforge-*' \
         --overwrite '/usr/share/applications/org.playforge.controlcenter.desktop' \
+        --overwrite '/usr/share/applications/org.playforge.files.desktop' \
         --overwrite '/usr/share/libalpm/hooks/95-playforge-snapshot.hook' \
         --overwrite '/etc/plymouth/plymouthd.conf' \
         --overwrite '/etc/xdg/*' \
@@ -176,10 +178,10 @@ if (( install_packages )); then
         --overwrite '/etc/udev/rules.d/60-playforge-*' \
         --overwrite '/etc/skel/.config/*' \
         --overwrite '/etc/pacman.d/playforge.conf' \
-        playforge-tools playforge-theme playforge-control-center
+        playforge-tools playforge-theme playforge-control-center playforge-files
 
     info "Installiert:"
-    pacman -Q playforge-tools playforge-theme playforge-control-center
+    pacman -Q playforge-tools playforge-theme playforge-control-center playforge-files
 fi
 
 printf '\nFertig. Künftige Updates: sudo pacman -Syu (oder Control Center → Updates).\n'

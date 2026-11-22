@@ -26,7 +26,8 @@ PLAYFORGE_CONTROL_CENTER="$dummy" bash "$base/stage.sh" >/dev/null
 
 find "$base" -path '*/stage/*' -type f -printf '%P\n' |
     sed 's|^[^/]*/stage/||' |
-    grep -v '^usr/local/bin/playforge-control-center$' |
+    grep -v -e '^usr/local/bin/playforge-control-center$' \
+        -e '^usr/local/bin/playforge-files$' |
     LC_ALL=C sort >"$tmp/staged"
 
 if ! diff -u "$tmp/all" "$tmp/staged" >"$tmp/diff"; then

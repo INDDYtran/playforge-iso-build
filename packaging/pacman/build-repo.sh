@@ -45,17 +45,22 @@ chown -R builder "$repo_dir"
 mkdir -p "$pkgdir"
 chown -R builder "$out"
 
-msg "Baue Control Center"
+msg "Baue Control Center und Dateibrowser"
 runuser -u builder -- env HOME=/home/builder CARGO_HOME=/home/builder/.cargo \
     bash -c "cd '$repo_dir/control-center' && cargo build --release --locked"
 cc="$repo_dir/control-center/target/release/playforge-control-center"
 [[ -x "$cc" ]] || die "Control-Center-Binary fehlt nach dem Build."
+runuser -u builder -- env HOME=/home/builder CARGO_HOME=/home/builder/.cargo \
+    bash -c "cd '$repo_dir/file-browser' && cargo build --release --locked"
+fb="$repo_dir/file-browser/target/release/playforge-files"
+[[ -x "$fb" ]] || die "Dateibrowser-Binary fehlt nach dem Build."
 
 msg "Stelle Paketinhalte zusammen"
-PLAYFORGE_CONTROL_CENTER="$cc" bash "$repo_dir/packaging/pacman/stage.sh"
+PLAYFORGE_CONTROL_CENTER="$cc" PLAYFORGE_FILE_BROWSER="$fb" \
+    bash "$repo_dir/packaging/pacman/stage.sh"
 chown -R builder "$repo_dir/packaging/pacman"
 
-for pkg in playforge-tools playforge-theme playforge-control-center; do
+for pkg in playforge-tools playforge-theme playforge-control-center playforge-files; do
     msg "Baue $pkg"
     (
         cd "$repo_dir/packaging/pacman/$pkg"
@@ -115,7 +120,7 @@ pacman -Si --config "$tmp/pacman.conf" playforge-tools >/dev/null
 # --nodeps nur einmal prüft Paketnamen weiter; zweimal überspringt alle
 # Abhängigkeiten (die Test-DB enthält absichtlich nur [playforge]).
 pacman -Sw --config "$tmp/pacman.conf" --nodeps --nodeps --noconfirm \
-    playforge-tools playforge-theme playforge-control-center >/dev/null
+    playforge-tools playforge-theme playforge-control-center playforge-files >/dev/null
 
 msg "Fertig"
 printf '  Version: %s\n' "$ver"

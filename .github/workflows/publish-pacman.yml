@@ -10,6 +10,8 @@ on:
     paths:
       - "overlay/**"
       - "control-center/**"
+      - "file-browser/**"
+      - "scripts/build-file-browser.sh"
       - "packaging/pacman/**"
       - ".github/workflows/publish-pacman.yml"
 
@@ -173,5 +175,5 @@ jobs:
               pacman -Syu --noconfirm --needed gnupg >/dev/null
               bash /src/packaging/pacman/verify-published-repo.sh
               bash /src/overlay/usr/local/bin/playforge-repo-enable --yes
-              pacman -Q playforge-tools playforge-theme playforge-control-center
+              pacman -Q playforge-tools playforge-theme playforge-control-center playforge-files
             '
