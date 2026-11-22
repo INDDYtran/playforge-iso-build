@@ -88,6 +88,7 @@ jobs:
           cp -- "$(dirname "$iso")"/*.sha256 dist/release/ 2>/dev/null || true
           cp -- "$(dirname "$iso")"/BUILD-INFO.txt dist/release/ 2>/dev/null || true
           cp -- "$(dirname "$iso")"/smoke-test.log dist/release/ 2>/dev/null || true
+          cp -- "$(dirname "$iso")"/install-test.log dist/release/ 2>/dev/null || true
           ls -lh dist/release
 
       - name: Prüfsummen signieren

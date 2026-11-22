@@ -11,6 +11,11 @@ on:
         description: "SOURCE_DATE_EPOCH als Unix-Zeit; leer = Commit-Zeit"
         required: false
         type: string
+      install_test:
+        description: "Installation im Live-System testen (QEMU, minimale Zielinstallation)"
+        required: false
+        type: boolean
+        default: false
   push:
     tags:
       - "v*"
@@ -26,7 +31,7 @@ jobs:
   build:
     name: ISO bauen und prüfen
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 180
 
     steps:
       - name: Repository auschecken
@@ -145,6 +150,18 @@ jobs:
             -v "$PWD/.cache/pacman:/var/cache/pacman/pkg" \
             playforge-builder
 
+      - name: Installation im Live-System testen
+        if: ${{ inputs.install_test == true }}
+        run: |
+          set -Eeuo pipefail
+          iso="$(find out -maxdepth 1 -type f -name '*.iso' -print -quit)"
+          [[ -n "$iso" ]] || { echo "Kein ISO für den Installationstest gefunden." >&2; exit 1; }
+          docker run --rm --privileged \
+            --platform linux/amd64 \
+            -v "$PWD/out:/build/out" \
+            --entrypoint bash \
+            playforge-builder /build/scripts/install-smoke-test.sh "/build/out/$(basename "$iso")"
+
       - name: Ergebnis prüfen
         id: result
         run: |
@@ -180,6 +197,8 @@ jobs:
             out/*.iso.sha256
             out/BUILD-INFO.txt
             out/smoke-test.log
+            out/install-test.log
+            out/install-test.log.qemu
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -192,5 +211,7 @@ jobs:
           path: |
             out/smoke-test.log
             out/smoke-test.log.qemu
+            out/install-test.log
+            out/install-test.log.qemu
           if-no-files-found: ignore
           retention-days: 7

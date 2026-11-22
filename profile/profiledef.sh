@@ -23,4 +23,5 @@ file_permissions=(
   ["/usr/local/bin/Installation_guide"]="0:0:755"
   ["/usr/local/bin/livecd-sound"]="0:0:755"
   ["/usr/local/lib/playforge/live-setup"]="0:0:755"
+  ["/usr/local/lib/playforge/install-test"]="0:0:755"
 )

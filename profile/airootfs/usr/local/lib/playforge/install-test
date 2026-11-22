@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Playforge – automatisierter Installationstest für das Live-System.
+#
+# Wird nur gestartet, wenn der Kernel-Parameter playforge.install_test=1
+# gesetzt ist (siehe playforge-install-test.service). Ersetzt die Zielpaketliste
+# durch ein kleines Set, installiert auf /dev/vda und prüft danach im
+# installierten System, ob die signierte Playforge-Paketquelle automatisch
+# aktiviert und die drei Pakete installiert wurden.
+set -Eeuo pipefail
+
+ok_marker='PLAYFORGE_INSTALL_TEST_OK'
+fail_marker='PLAYFORGE_INSTALL_TEST_FAILED'
+success=0
+
+cleanup() {
+    local rc=$?
+    umount -R /mnt 2>/dev/null || true
+    if (( success == 0 )); then
+        printf '\n%s: Test vorzeitig beendet (Status %s).\n' \
+            "$fail_marker" "$rc" >&2
+    fi
+}
+trap cleanup EXIT
+
+fail() {
+    printf '\n%s: %s\n' "$fail_marker" "$*" >&2
+    exit 1
+}
+trap 'fail "unerwarteter Fehler in Zeile $LINENO"' ERR
+
+printf '\n==> Playforge Installationstest\n'
+
+for _ in $(seq 1 60); do
+    [[ -b /dev/vda ]] && break
+    sleep 2
+done
+[[ -b /dev/vda ]] || fail "/dev/vda fehlt – QEMU-Zieldatenträger nicht erkannt."
+
+printf 'Warte auf das Live-Netzwerk …\n'
+network_ok=0
+for _ in $(seq 1 120); do
+    if pacman -Sy --noconfirm >/dev/null 2>&1; then
+        network_ok=1
+        break
+    fi
+    sleep 5
+done
+(( network_ok )) || fail "Live-Netzwerk/pacman-Mirrors nicht erreichbar."
+
+# Kleine Zielpaketliste: base + Kernel + die Dienste, die configure-target.sh
+# aktiviert. Das Repo-Paket bringt die restlichen Playforge-Abhängigkeiten mit.
+cat >/usr/local/share/playforge/packages.target <<'EOF'
+base
+linux-zen
+linux-zen-headers
+mkinitcpio
+sudo
+shadow
+archlinux-keyring
+pacman-mirrorlist
+ca-certificates
+gnupg
+networkmanager
+sddm
+bluez
+power-profiles-daemon
+reflector
+plymouth
+grub
+efibootmgr
+intel-ucode
+amd-ucode
+EOF
+
+umount -R /mnt 2>/dev/null || true
+
+printf 'Starte playforge-install auf /dev/vda …\n'
+{
+    printf '%s\n' \
+        /dev/vda \
+        /dev/vda \
+        JA \
+        playforge-test \
+        gamer \
+        test \
+        test
+    printf '\n' # Root-Passwort leer = gesperrt
+    printf '%s\n' \
+        Europe/Berlin \
+        de_DE.UTF-8 \
+        de-latin1 \
+        1 \
+        4 \
+        ja
+} | /usr/local/bin/playforge-install
+
+mount /dev/vda2 /mnt
+
+printf '\nPrüfe installiertes System …\n'
+[[ -f /mnt/etc/pacman.d/playforge.conf ]] ||
+    fail "/etc/pacman.d/playforge.conf fehlt im Zielsystem."
+grep -q '^\[playforge\]' /mnt/etc/pacman.d/playforge.conf ||
+    fail "playforge.conf enthält keine [playforge]-Sektion."
+grep -qF 'Include = /etc/pacman.d/playforge.conf' /mnt/etc/pacman.conf ||
+    fail "Include-Zeile fehlt in /etc/pacman.conf."
+grep -qF 'Server = https://inddytran.github.io/playforge-iso-build/x86_64' \
+    /mnt/etc/pacman.d/playforge.conf ||
+    fail "Falsche Repository-URL in playforge.conf."
+
+arch-chroot /mnt pacman -Q playforge-tools playforge-theme playforge-control-center ||
+    fail "Nicht alle Playforge-Pakete sind installiert."
+arch-chroot /mnt pacman-key --list-keys \
+    ABFBB39873AE76F34A0A6DD32103C96929550BF7 >/dev/null ||
+    fail "Repository-Schlüssel ist im Zielsystem nicht importiert."
+
+umount -R /mnt
+success=1
+printf '\n%s\n' "$ok_marker"
