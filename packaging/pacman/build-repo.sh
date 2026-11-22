@@ -82,7 +82,11 @@ repo-add --sign playforge.db.tar.gz ./*.pkg.tar.zst
 
 # pacman fragt playforge.db (ohne .tar.gz) an; Signaturen gelten für identische
 # Bytes und werden mitkopiert.
-rm -f playforge.db playforge.files
+# repo-add legt playforge.db und playforge.db.sig als Symlinks auf die
+# .tar.gz-Dateien an. Pages liefert keine Symlinks aus, deshalb durch echte
+# Kopien ersetzen – vorher die Symlinks entfernen, sonst schreibt cp in die
+# Zieldatei und meldet „same file“.
+rm -f playforge.db playforge.db.sig playforge.files playforge.files.sig
 cp playforge.db.tar.gz playforge.db
 cp playforge.files.tar.gz playforge.files
 cp playforge.db.tar.gz.sig playforge.db.sig
