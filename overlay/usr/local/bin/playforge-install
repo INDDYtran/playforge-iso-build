@@ -306,7 +306,14 @@ chmod 0755 "$target"/usr/local/lib/playforge/*.sh 2>/dev/null || true
 info "Installiere Pakete (kann 10–30 Minuten dauern)"
 mapfile -t packages < <(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$target_pkg_file" | awk 'NF')
 (( ${#packages[@]} > 0 )) || die "Paketliste ist leer."
-pacstrap -K -C /etc/pacman.conf "$target" "${packages[@]}"
+# Ohne -K wird mit dem bereits vertrauenswürdigen Schlüsselring des
+# Live-Systems geprüft. -K würde im Ziel einen leeren Schlüsselring anlegen,
+# in dem die Arch-Paketsignaturen unbekannt sind.
+pacstrap -C /etc/pacman.conf "$target" "${packages[@]}"
+
+info "Initialisiere Schlüsselring im Zielsystem"
+arch-chroot "$target" pacman-key --init
+arch-chroot "$target" pacman-key --populate archlinux
 
 info "Erzeuge /etc/fstab"
 genfstab -U "$target" >>"$target/etc/fstab"
