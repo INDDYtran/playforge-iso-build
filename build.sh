@@ -94,11 +94,23 @@ chmod 0644 "$overlay_root/etc/playforge/version"
 # /etc/mkinitcpio.conf.d/archiso.conf mit – dort wird der Hook ergänzt.
 msg "Aktiviere Plymouth-Boot-Splash"
 plymouth_rel=/usr/share/plymouth/themes/playforge
-plymouth_dir="$profile_dir/airootfs$plymouth_rel"
-for asset in playforge.plymouth playforge.script background.png background-glow.png; do
-    [[ -f "$plymouth_dir/$asset" ]] ||
+plymouth_assets=(playforge.plymouth playforge.script background.png background-glow.png)
+plymouth_src="$overlay_root$plymouth_rel"
+plymouth_dst="$profile_dir/airootfs$plymouth_rel"
+for asset in "${plymouth_assets[@]}"; do
+    [[ -f "$plymouth_src/$asset" ]] ||
         die "Plymouth-Theme unvollständig: $plymouth_rel/$asset fehlt."
 done
+
+# Das Overlay wird erst beim Live-Start nach / kopiert. Für Initramfs und
+# Boot-Splash muss das Theme aber schon im airootfs liegen – deshalb hier
+# direkt installieren (das Overlay behält es für die Installation).
+install -d "$plymouth_dst"
+for asset in "${plymouth_assets[@]}"; do
+    install -m 0644 "$plymouth_src/$asset" "$plymouth_dst/$asset"
+done
+install -Dm0644 "$overlay_root/etc/plymouth/plymouthd.conf" \
+    "$profile_dir/airootfs/etc/plymouth/plymouthd.conf"
 
 hooks_found=0
 while IFS= read -r -d '' conf; do
