@@ -1,0 +1,31 @@
+# Playforge – Skripte, Konfiguration und Wartungswerkzeuge
+pkgname=playforge-tools
+pkgver=${PLAYFORGE_PKGVER:?PLAYFORGE_PKGVER fehlt}
+pkgrel=1
+pkgdesc="Playforge-Skripte, Systemkonfiguration und Wartungswerkzeuge"
+arch=('any')
+url="https://github.com/INDDYtran/playforge-iso-build"
+license=('custom')
+depends=('bash' 'coreutils' 'curl' 'openssl' 'gnupg' 'pacman' 'systemd' 'util-linux')
+optdepends=('btrfs-progs: Btrfs-Snapshots vor Paketänderungen'
+            'flatpak: Flathub-Anwendungen')
+backup=(
+    'etc/environment.d/90-playforge.conf'
+    'etc/gamemode.ini'
+    'etc/modules-load.d/playforge.conf'
+    'etc/security/limits.d/20-playforge.conf'
+    'etc/skel/.config/MangoHud/MangoHud.conf'
+    'etc/skel/.config/gamemode.ini'
+    'etc/sysctl.d/90-playforge.conf'
+    'etc/systemd/system/playforge-profile.service'
+    'etc/systemd/system/playforge-update-check.service'
+    'etc/systemd/system/playforge-update-check.timer'
+    'etc/systemd/zram-generator.conf'
+    'etc/udev/rules.d/60-playforge-gamepads.rules'
+)
+install=playforge-tools.install
+options=('!strip')
+
+package() {
+    cp -a -- "$startdir/stage/." "$pkgdir/"
+}

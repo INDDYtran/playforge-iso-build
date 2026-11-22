@@ -1,0 +1,17 @@
+# Playforge – Control Center (Rust/egui)
+pkgname=playforge-control-center
+pkgver=${PLAYFORGE_PKGVER:?PLAYFORGE_PKGVER fehlt}
+pkgrel=1
+pkgdesc="Playforge Control Center für Systemstatus, Gaming und Updates"
+arch=('x86_64')
+url="https://github.com/INDDYtran/playforge-iso-build"
+license=('custom')
+depends=('glibc' 'gcc-libs' 'libxkbcommon' 'wayland' 'libx11' 'libxcursor' 'libxrandr' 'libxi')
+optdepends=('plasma-desktop: Desktop-Umgebung'
+            'vulkan-tools: Vulkan-Diagnose'
+            'nvidia-utils: NVIDIA-Status')
+options=('!strip')
+
+package() {
+    cp -a -- "$startdir/stage/." "$pkgdir/"
+}

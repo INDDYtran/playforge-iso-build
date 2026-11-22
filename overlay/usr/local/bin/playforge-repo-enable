@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# Playforge – richtet die signierte Playforge-Paketquelle ein.
+#
+#   sudo playforge-repo-enable              Quelle einrichten und Pakete installieren
+#   sudo playforge-repo-enable --no-install nur Quelle und Schlüssel einrichten
+#
+# Der Befehl ist idempotent. Auf bestehenden Installationen ersetzt er die
+# bisher per Overlay verteilten Dateien durch die Pakete und meldet sie bei
+# pacman an, damit sie danach mit Versionen, Updates und Downgrade verwaltet
+# werden.
+set -Eeuo pipefail
+
+# Die Paketinstallation ersetzt gleich diese Datei. Deshalb läuft das Skript
+# aus einer Kopie weiter, damit bash nicht mitten im Lesen eine neue Fassung
+# untergeschoben bekommt.
+if [[ "${PLAYFORGE_REPO_ENABLE_REEXEC:-0}" != "1" ]]; then
+    self_copy="$(mktemp)"
+    cp -- "$0" "$self_copy"
+    chmod 0700 "$self_copy"
+    export PLAYFORGE_REPO_ENABLE_REEXEC=1
+    export PLAYFORGE_REPO_ENABLE_SELF="$self_copy"
+    exec "$self_copy" "$@"
+fi
+trap 'rm -f -- "${PLAYFORGE_REPO_ENABLE_SELF:-}"' EXIT
+
+repo_url="${PLAYFORGE_REPO_URL:-https://inddytran.github.io/playforge-iso-build/x86_64}"
+conf="/etc/pacman.d/playforge.conf"
+key="${PLAYFORGE_REPO_KEY:-}"
+install_packages=1
+
+# Der öffentliche Schlüssel steckt zusätzlich im Skript. So funktioniert die
+# Migration auch auf Systemen, deren alter Tar-Updater die neue Datei unter
+# /usr/share/playforge/ noch nicht kennt (er erlaubt nur usr/local/bin/ …).
+embedded_key="$(cat <<'EOF'
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEawLtzxYJKwYBBAHaRw8BAQdA6uAE7K9ME0Jro2aUgbPBBjd/EAePQCgccHBI
+sKbXdIy0NVBsYXlmb3JnZSBSZXBvc2l0b3J5IFNpZ25pbmcgPHJlcG9AcGxheWZv
+cmdlLmludmFsaWQ+iJAEExYKADgWIQSr+7OYc65280oKbdMhA8lpKVUL9wUCawLt
+zwIbAwULCQgHAgYVCgkICwIEFgIDAQIeAQIXgAAKCRAhA8lpKVUL92YOAQDDODxp
+9Tt8yZpQf+9VcQZiR+WQlEjoSTuISMd0r/1fVwEAq13rM/Vh2+rg4GcAXm/96BYb
+c1VKHruHfSPGXx6PtAs=
+=7VnH
+-----END PGP PUBLIC KEY BLOCK-----
+EOF
+)"
+key_tmp=""
+cleanup_key() {
+    [[ -z "$key_tmp" ]] || rm -f -- "$key_tmp"
+}
+trap cleanup_key EXIT
+
+die() {
+    printf 'Fehler: %s\n' "$*" >&2
+    exit 1
+}
+info() { printf '  %s\n' "$*"; }
+
+usage() {
+    cat <<'EOF'
+Nutzung: playforge-repo-enable [--no-install]
+
+Richtet die signierte Playforge-Paketquelle in /etc/pacman.conf ein, importiert
+den Repository-Schlüssel und installiert playforge-tools, playforge-theme und
+playforge-control-center. Danach laufen Updates über:
+
+  sudo pacman -Syu
+
+Optionen:
+  --no-install   nur Schlüssel und Quelle einrichten, keine Pakete installieren
+  -h, --help     diese Hilfe
+EOF
+}
+
+while (( $# > 0 )); do
+    case "$1" in
+        --no-install) install_packages=0 ; shift ;;
+        --yes) shift ;;
+        -h | --help) usage; exit 0 ;;
+        *) die "Unbekannte Option: $1 (siehe --help)" ;;
+    esac
+done
+
+(( EUID == 0 )) || die "bitte mit Administratorrechten ausführen: sudo playforge-repo-enable"
+command -v pacman >/dev/null 2>&1 || die "pacman fehlt – ist das ein Playforge-System?"
+command -v pacman-key >/dev/null 2>&1 || die "pacman-key fehlt."
+command -v gpg >/dev/null 2>&1 || die "gpg fehlt (gnupg installieren)."
+if [[ -z "$key" ]]; then
+    key_tmp="$(mktemp)"
+    printf '%s\n' "$embedded_key" >"$key_tmp"
+    key="$key_tmp"
+fi
+[[ -f "$key" ]] || die "Schlüsseldatei fehlt: $key"
+
+info "Repository: $repo_url"
+if [[ -n "$key_tmp" ]]; then
+    info "Schlüssel:   eingebettet"
+else
+    info "Schlüssel:   $key"
+fi
+
+install -d -m 0755 /etc/pacman.d
+if ! grep -q '^\[playforge\]' "$conf" 2>/dev/null; then
+    cat >"$conf" <<EOF
+# Playforge-Paketquelle – verwaltet von playforge-repo-enable
+[playforge]
+SigLevel = Required DatabaseRequired
+Server = $repo_url
+EOF
+    chmod 0644 "$conf"
+else
+    info "Paketquelle ist bereits konfiguriert."
+fi
+
+if [[ ! -d /etc/pacman.d/gnupg ]]; then
+    info "Initialisiere pacman-Schlüsselring …"
+    pacman-key --init
+    pacman-key --populate archlinux || true
+fi
+
+fpr="$(gpg --batch --with-colons --import-options show-only --import "$key" 2>/dev/null |
+    awk -F: '/^fpr:/{print $10; exit}')"
+[[ -n "$fpr" ]] || die "Fingerprint des Repository-Schlüssels nicht lesbar."
+info "Fingerprint: $fpr"
+
+if pacman-key --list-keys "$fpr" >/dev/null 2>&1; then
+    info "Repository-Schlüssel ist bereits importiert ($fpr)."
+else
+    info "Importiere Repository-Schlüssel $fpr …"
+    pacman-key --add "$key"
+fi
+# Auch bei vorhandenem Schlüssel lokal signieren: ohne LSign bleibt er
+# „unknown trust“ und die signierte Datenbank wird abgelehnt.
+pacman-key --lsign-key "$fpr" >/dev/null
+
+# Erst nach erfolgreichem Schlüsselimport einbinden: sonst bliebe ein
+# pacman.conf mit unbekanntem Trust zurück, falls der Import scheitert.
+if ! grep -qxF 'Include = /etc/pacman.d/playforge.conf' /etc/pacman.conf; then
+    {
+        printf '\n# Playforge-Paketquelle\n'
+        printf 'Include = /etc/pacman.d/playforge.conf\n'
+    } >>/etc/pacman.conf
+    info "/etc/pacman.conf um die Paketquelle ergänzt."
+else
+    info "Paketquelle ist bereits in /etc/pacman.conf eingebunden."
+fi
+
+info "Synchronisiere Paketdatenbank …"
+pacman -Sy --noconfirm
+
+if (( install_packages )); then
+    info "Installiere Playforge-Pakete (ersetzt die bisherigen Overlay-Dateien) …"
+    pacman -S --needed --noconfirm \
+        --overwrite '/usr/local/bin/playforge-*' \
+        --overwrite '/usr/local/lib/playforge/*' \
+        --overwrite '/usr/local/share/playforge/*' \
+        --overwrite '/usr/share/playforge/*' \
+        --overwrite '/usr/share/plymouth/themes/playforge/*' \
+        --overwrite '/usr/share/plasma/look-and-feel/org.playforge.desktop/*' \
+        --overwrite '/usr/share/wallpapers/Playforge/*' \
+        --overwrite '/usr/share/icons/Playforge/*' \
+        --overwrite '/usr/share/icons/hicolor/scalable/apps/org.playforge.controlcenter.svg' \
+        --overwrite '/usr/share/color-schemes/Playforge.colors' \
+        --overwrite '/usr/share/pixmaps/playforge-*' \
+        --overwrite '/usr/share/applications/org.playforge.controlcenter.desktop' \
+        --overwrite '/usr/share/libalpm/hooks/95-playforge-snapshot.hook' \
+        --overwrite '/etc/plymouth/plymouthd.conf' \
+        --overwrite '/etc/xdg/*' \
+        --overwrite '/etc/environment.d/90-playforge.conf' \
+        --overwrite '/etc/gamemode.ini' \
+        --overwrite '/etc/modules-load.d/playforge.conf' \
+        --overwrite '/etc/security/limits.d/20-playforge.conf' \
+        --overwrite '/etc/sysctl.d/90-playforge.conf' \
+        --overwrite '/etc/systemd/system/playforge-*' \
+        --overwrite '/etc/systemd/zram-generator.conf' \
+        --overwrite '/etc/udev/rules.d/60-playforge-*' \
+        --overwrite '/etc/skel/.config/*' \
+        --overwrite '/etc/pacman.d/playforge.conf' \
+        playforge-tools playforge-theme playforge-control-center
+
+    info "Installiert:"
+    pacman -Q playforge-tools playforge-theme playforge-control-center
+fi
+
+printf '\nFertig. Künftige Updates: sudo pacman -Syu (oder Control Center → Updates).\n'

@@ -1,0 +1,26 @@
+# Playforge – Theme, Wallpaper, Splash und Branding
+pkgname=playforge-theme
+pkgver=${PLAYFORGE_PKGVER:?PLAYFORGE_PKGVER fehlt}
+pkgrel=1
+pkgdesc="Playforge-Theme für KDE Plasma, Plymouth, SDDM und Bootmenü"
+arch=('any')
+url="https://github.com/INDDYtran/playforge-iso-build"
+license=('custom')
+depends=()
+optdepends=('plasma-desktop: KDE-Theme und Wallpaper'
+            'plymouth: Boot-Splash'
+            'sddm: Anmeldebildschirm')
+backup=(
+    'etc/plymouth/plymouthd.conf'
+    'etc/xdg/autostart/playforge-theme.desktop'
+    'etc/xdg/kcminputrc'
+    'etc/xdg/kdeglobals'
+    'etc/xdg/ksplashrc'
+    'etc/xdg/kwinrc'
+    'etc/xdg/plasmarc'
+)
+options=('!strip')
+
+package() {
+    cp -a -- "$startdir/stage/." "$pkgdir/"
+}

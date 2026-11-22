@@ -237,5 +237,14 @@ else
     grub-mkconfig -o /boot/grub/grub.cfg
 fi
 
+info "Playforge-Paketquelle"
+if [[ -x /usr/local/bin/playforge-repo-enable ]]; then
+    if ! /usr/local/bin/playforge-repo-enable --yes; then
+        warn "Paketquelle konnte nicht eingerichtet werden – die Dateien aus dem Image bleiben nutzbar."
+    fi
+else
+    warn "playforge-repo-enable fehlt – die Paketquelle wurde nicht eingerichtet."
+fi
+
 rm -f "$config"
 printf '\nZielsystem ist eingerichtet.\n'

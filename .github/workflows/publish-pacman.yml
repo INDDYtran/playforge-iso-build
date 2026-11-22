@@ -1,0 +1,175 @@
+name: Playforge-Paketquelle
+
+# Baut die Playforge-Pakete, signiert Pakete und Datenbank und veröffentlicht
+# sie im Branch gh-pages. GitHub Pages liefert daraus die pacman-Quelle.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "overlay/**"
+      - "control-center/**"
+      - "packaging/pacman/**"
+      - ".github/workflows/publish-pacman.yml"
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: playforge-pacman
+  cancel-in-progress: false
+
+env:
+  REPO_URL: https://inddytran.github.io/playforge-iso-build/x86_64
+
+jobs:
+  publish:
+    name: Pakete bauen und veröffentlichen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Paketabdeckung prüfen
+        run: bash packaging/pacman/check-coverage.sh
+
+      - name: Version bestimmen
+        run: |
+          set -Eeuo pipefail
+          date="$(git show -s --format=%cd --date=format:%Y.%m.%d HEAD)"
+          count="$(git rev-list --count HEAD)"
+          sha="$(git rev-parse --short=7 HEAD)"
+          version="$date.r$count.g$sha"
+          echo "PLAYFORGE_PKGVER=$version" >>"$GITHUB_ENV"
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >>"$GITHUB_ENV"
+          {
+            echo "### Paketquelle \`$version\`"
+            echo ""
+            echo "Quellstand: \`$(git rev-parse HEAD)\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Alte Pakete aus gh-pages übernehmen
+        run: |
+          set -Eeuo pipefail
+          mkdir -p out/pacman/x86_64
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch --depth=1 origin gh-pages
+            worktree="$RUNNER_TEMP/old-pacman-repo"
+            rm -rf "$worktree"
+            git worktree add --detach "$worktree" FETCH_HEAD
+            if [[ -d "$worktree/x86_64" ]]; then
+              cp -a "$worktree/x86_64/." out/pacman/x86_64/
+            fi
+            git worktree remove --force "$worktree"
+            echo "Alte Paketversionen übernommen: $(find out/pacman/x86_64 -name '*.pkg.tar.zst' | wc -l)"
+          else
+            echo "Noch kein gh-pages-Branch vorhanden."
+          fi
+
+      - name: Signaturschlüssel bereitstellen
+        env:
+          KEY: ${{ secrets.PLAYFORGE_REPO_GPG_KEY }}
+        run: |
+          set -Eeuo pipefail
+          [[ -n "$KEY" ]] || {
+            echo "Secret PLAYFORGE_REPO_GPG_KEY fehlt." >&2
+            exit 1
+          }
+          umask 077
+          printf '%s\n' "$KEY" | tr -d '\r' >"$RUNNER_TEMP/playforge-repo-key.asc"
+
+      - name: Pakete und Repository bauen
+        run: |
+          set -Eeuo pipefail
+          docker run --rm \
+            -v "$PWD:/src:ro" \
+            -v "$PWD/out:/out" \
+            -v "$RUNNER_TEMP:/secrets:ro" \
+            -e "PLAYFORGE_PKGVER=$PLAYFORGE_PKGVER" \
+            -e "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH" \
+            -e "PLAYFORGE_GPG_KEY=/secrets/playforge-repo-key.asc" \
+            -e "PLAYFORGE_OUT=/out/pacman" \
+            archlinux:base-devel bash -c '
+              set -Eeuo pipefail
+              pacman -Syu --noconfirm --needed \
+                base-devel git rust openssl gnupg pacman-contrib curl \
+                pkgconf wayland libxkbcommon libx11 libxcursor libxrandr libxi
+              cp -a /src /tmp/build
+              bash /tmp/build/packaging/pacman/build-repo.sh
+            '
+          sudo chown -R "$(id -u):$(id -g)" out/pacman
+
+      - name: In gh-pages veröffentlichen
+        run: |
+          set -Eeuo pipefail
+          git fetch origin gh-pages
+          worktree="$RUNNER_TEMP/gh-pages"
+          rm -rf "$worktree"
+          git worktree add --detach "$worktree" FETCH_HEAD
+          mkdir -p "$worktree/x86_64"
+          cp -f out/pacman/x86_64/* "$worktree/x86_64/"
+          touch "$worktree/.nojekyll"
+          cd "$worktree"
+          git config user.name "Playforge Package Bot"
+          git config user.email "playforge@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Keine Änderungen an der Paketquelle."
+            exit 0
+          fi
+          git commit -m "Paketquelle: $PLAYFORGE_PKGVER"
+          git push origin HEAD:gh-pages
+
+      - name: GitHub Pages sicherstellen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          if gh api "repos/${{ github.repository }}/pages" >/dev/null 2>&1; then
+            echo "GitHub Pages ist bereits eingerichtet."
+            exit 0
+          fi
+          gh api --method POST "repos/${{ github.repository }}/pages" \
+            --input - <<'JSON'
+          {"source":{"branch":"gh-pages","path":"/"}}
+          JSON
+
+  verify:
+    name: Veröffentlichte Quelle prüfen
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version bestimmen
+        run: |
+          set -Eeuo pipefail
+          date="$(git show -s --format=%cd --date=format:%Y.%m.%d HEAD)"
+          count="$(git rev-list --count HEAD)"
+          sha="$(git rev-parse --short=7 HEAD)"
+          echo "PLAYFORGE_EXPECTED_VERSION=$date.r$count.g$sha" >>"$GITHUB_ENV"
+
+      - name: pacman gegen die Pages-Quelle testen
+        run: |
+          set -Eeuo pipefail
+          docker run --rm \
+            -v "$PWD:/src:ro" \
+            -e "PLAYFORGE_REPO_URL=$REPO_URL" \
+            -e "PLAYFORGE_REPO_KEY=/src/packaging/pacman/pacman-repo.asc" \
+            -e "PLAYFORGE_EXPECTED_VERSION=$PLAYFORGE_EXPECTED_VERSION" \
+            archlinux:base-devel bash -c '
+              set -Eeuo pipefail
+              pacman -Syu --noconfirm --needed gnupg >/dev/null
+              bash /src/packaging/pacman/verify-published-repo.sh
+            '

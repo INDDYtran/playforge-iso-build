@@ -1,0 +1,17 @@
+post_install() {
+    _playforge_post "$1"
+}
+
+post_upgrade() {
+    _playforge_post "$1"
+}
+
+_playforge_post() {
+    install -d -m 0755 /etc/playforge 2>/dev/null || true
+    printf '%s\n' "$1" >/etc/playforge/version 2>/dev/null || true
+    systemctl daemon-reload >/dev/null 2>&1 || true
+}
+
+pre_remove() {
+    :
+}

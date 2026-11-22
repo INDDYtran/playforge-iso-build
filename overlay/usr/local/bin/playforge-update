@@ -104,8 +104,9 @@ Umgebung:
   PLAYFORGE_UPDATE_REPO   owner/repo der Quelle (Standard: INDDYtran/playforge-iso-build)
   PLAYFORGE_UPDATE_BASE   abweichende Download-Basis (Datei-URL oder Mirror)
   PLAYFORGE_UPDATE_ROOT   Zielwurzel, nur für Tests
+  PLAYFORGE_UPDATE_LEGACY 1 = Tar-Update trotz installierter Paketquelle
 
-Version: playforge-update 1.1
+Version: playforge-update 1.2
 EOF
 }
 
@@ -212,6 +213,14 @@ enable_check_timer() {
     systemctl enable --now playforge-update-check.timer >/dev/null 2>&1 || true
 }
 
+# Sobald playforge-tools installiert ist, gehört die Aktualisierung pacman.
+# Der Tar-Updater würde sonst neuere Paketdateien mit älteren überschreiben.
+packages_managed() {
+    [[ -z "$root" ]] || return 1
+    command -v pacman >/dev/null 2>&1 || return 1
+    pacman -Qq playforge-tools >/dev/null 2>&1
+}
+
 path_allowed() {
     local rel="$1" prefix
     if [[ "$rel" == /* || "$rel" == *..* ]]; then
@@ -229,6 +238,9 @@ path_allowed() {
 
 do_rollback() {
     require_root
+    if packages_managed; then
+        die "Dieses System wird über pacman verwaltet – Downgrade mit 'pacman -U' aus dem Paketcache."
+    fi
     [[ -d "$backup_dir" ]] || die "Keine Sicherung unter $backup_dir vorhanden."
 
     local latest
@@ -301,9 +313,18 @@ reload_units() {
 # ---------------------------------------------------------------- Update
 
 do_update() {
-    local current remote
+    local current remote pkgver
     current="$(local_version || true)"
     [[ -n "$current" ]] || current="unbekannt"
+
+    if packages_managed && [[ "${PLAYFORGE_UPDATE_LEGACY:-0}" != "1" ]]; then
+        pkgver="$(pacman -Q playforge-tools 2>/dev/null | awk '{print $2}')"
+        write_status ok "${pkgver:-$current}" 0
+        info "Playforge wird über die Paketquelle verwaltet."
+        info "Updates: sudo pacman -Syu (oder Control Center → Updates)."
+        info "Notfall: PLAYFORGE_UPDATE_LEGACY=1 sudo -E playforge-update"
+        exit 0
+    fi
 
     step "Playforge Systemupdate"
     detail "Quelle" "$base"
