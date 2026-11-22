@@ -245,11 +245,11 @@ fn option(
 
     let square = Rect::from_min_size(rect.left_top() + Vec2::new(14.0, 16.0), Vec2::splat(7.0));
     if selected {
-        painter.rect_filled(square, CornerRadius::same(1), accent);
+        painter.rect_filled(square, CornerRadius::ZERO, accent);
     } else {
         painter.rect_stroke(
             square,
-            CornerRadius::same(1),
+            CornerRadius::ZERO,
             Stroke::new(1.0_f32, theme::FAINT),
             StrokeKind::Inside,
         );

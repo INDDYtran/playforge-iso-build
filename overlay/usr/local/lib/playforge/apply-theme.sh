@@ -36,9 +36,9 @@ setup_plasma_style() {
         "Name": "Playforge"
       }
     ],
-    "Description": "Playforge Plasma-Stil auf Basis von Breeze Dark.",
-    "Description[de]": "Playforge Plasma-Stil auf Basis von Breeze Dark.",
-    "Description[en]": "Playforge Plasma style based on Breeze Dark.",
+    "Description": "Playforge Plasma-Stil im ASCII-Brutalismus auf Basis von Breeze Dark.",
+    "Description[de]": "Playforge Plasma-Stil im ASCII-Brutalismus auf Basis von Breeze Dark.",
+    "Description[en]": "Playforge plasma style in ASCII brutalism, based on Breeze Dark.",
     "EnabledByDefault": true,
     "Id": "Playforge",
     "License": "GPL-2.0-or-later",
@@ -82,7 +82,7 @@ showlogo=shown
 showClock=true
 logo=$logo
 type=image
-color=#0C0A08
+color=#000000
 fontSize=10
 background=$wallpaper
 needsFullUserModel=false

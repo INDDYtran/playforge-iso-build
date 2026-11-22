@@ -7,15 +7,15 @@
       }
     ],
     "Category": "Global Themes",
-    "Description": "Dunkles Gaming-Theme mit warmen Bernstein-Akzenten auf Eisenbasis, Playforge-Wallpaper und eigenem Splashscreen.",
-    "Description[de]": "Dunkles Gaming-Theme mit warmen Bernstein-Akzenten auf Eisenbasis, Playforge-Wallpaper und eigenem Splashscreen.",
-    "Description[en]": "Dark gaming theme with warm amber accents on an iron base, Playforge wallpaper and a custom splash screen.",
+    "Description": "ASCII-Brutalismus für Playforge: tiefes Schwarz, Papierweiß, Arch-Blau, Monospace-Typografie, harte Kanten und ein eigener Splashscreen.",
+    "Description[de]": "ASCII-Brutalismus für Playforge: tiefes Schwarz, Papierweiß, Arch-Blau, Monospace-Typografie, harte Kanten und ein eigener Splashscreen.",
+    "Description[en]": "ASCII brutalism for Playforge: deep black, paper white, Arch blue, monospace typography, hard edges and a custom splash screen.",
     "Id": "org.playforge.desktop",
     "License": "GPL-2.0-or-later",
     "Name": "Playforge",
     "Name[de]": "Playforge",
     "Name[en]": "Playforge",
-    "Version": "1.0",
+    "Version": "2.0",
     "Website": "https://github.com/INDDYtran/playforge-iso-build"
   }
 }

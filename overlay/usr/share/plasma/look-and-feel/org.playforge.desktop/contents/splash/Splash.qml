@@ -1,43 +1,47 @@
 import QtQuick
 
+// Playforge – Splash «ASCII Brutal».
+// Reines Schwarz, Monospace, harte Kanten; der Ladebalken besteht aus
+// einzelnen Blöcken wie eine Terminal-Fortschrittsanzeige.
 Rectangle {
     id: root
-    color: "#0C0A08"
+    color: "#000000"
 
     property int stage
+    property int segments: 32
+    readonly property int lit: Math.max(3, Math.round(Math.min(1, stage / 5) * segments))
 
-    // Warm ember glow behind the mark
-    Rectangle {
-        anchors.centerIn: parent
-        width: Math.min(root.width, root.height) * 0.55
-        height: width
-        radius: width / 2
-        color: "#1A0F06"
-        opacity: 0.55
+    // Eckmarken statt runder Rahmen.
+    Repeater {
+        model: 4
+        Rectangle {
+            width: Math.max(28, root.width * 0.026)
+            height: 2
+            color: "#1793D1"
+            x: (index % 2 === 0) ? root.width * 0.06 : root.width * 0.94 - width
+            y: (index < 2) ? root.height * 0.16 : root.height * 0.84
+        }
     }
-
-    Image {
-        anchors.fill: parent
-        source: "file:///usr/share/wallpapers/Playforge/contents/images/2560x1440.png"
-        fillMode: Image.PreserveAspectCrop
-        asynchronous: true
-        opacity: 0.35
-    }
-
-    Rectangle {
-        anchors.fill: parent
-        color: "#CC0C0A08"
+    Repeater {
+        model: 4
+        Rectangle {
+            width: 2
+            height: Math.max(28, root.width * 0.026)
+            color: "#1793D1"
+            x: (index % 2 === 0) ? root.width * 0.06 : root.width * 0.94 - width
+            y: (index < 2) ? root.height * 0.16 : root.height * 0.84 - height
+        }
     }
 
     Column {
         anchors.centerIn: parent
-        spacing: root.height * 0.018
+        spacing: root.height * 0.026
 
         Image {
             anchors.horizontalCenter: parent.horizontalCenter
             source: "images/playforge-logo.svg"
-            sourceSize.width: Math.min(root.width, root.height) * 0.18
-            sourceSize.height: Math.min(root.width, root.height) * 0.18
+            sourceSize.width: Math.min(root.width, root.height) * 0.19
+            sourceSize.height: Math.min(root.width, root.height) * 0.19
             fillMode: Image.PreserveAspectFit
             asynchronous: true
         }
@@ -45,44 +49,68 @@ Rectangle {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "PLAYFORGE"
-            color: "#F5EFE4"
-            font.pixelSize: Math.max(20, root.height * 0.046)
+            color: "#F2F2EC"
+            font.family: "monospace"
+            font.pixelSize: Math.max(22, root.height * 0.052)
             font.bold: true
-            font.letterSpacing: font.pixelSize * 0.26
+            font.letterSpacing: font.pixelSize * 0.08
         }
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "GAMING. FORGED."
-            color: "#F59E0B"
-            font.pixelSize: Math.max(10, root.height * 0.014)
-            font.letterSpacing: font.pixelSize * 0.34
+            text: "ARCH LINUX / GAMING / ASCII BRUTAL"
+            color: "#1793D1"
+            font.family: "monospace"
+            font.pixelSize: Math.max(9, root.height * 0.0125)
+            font.letterSpacing: font.pixelSize * 0.16
         }
     }
 
-    Rectangle {
-        id: track
-
+    Row {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.height * 0.11
-        width: Math.min(root.width * 0.26, root.height * 0.45)
-        height: Math.max(3, root.height * 0.003)
-        radius: height / 2
-        color: "#2A2218"
+        anchors.bottomMargin: root.height * 0.12
+        spacing: Math.max(2, root.height * 0.0025)
 
-        Rectangle {
-            height: parent.height
-            radius: parent.radius
-            width: parent.width * Math.min(1, Math.max(0.04, root.stage / 5))
-            color: "#F59E0B"
-
-            Behavior on width {
-                NumberAnimation {
-                    duration: 260
-                    easing.type: Easing.OutCubic
-                }
+        Repeater {
+            model: root.segments
+            Rectangle {
+                width: Math.max(3, Math.min(root.width * 0.008, 14))
+                height: Math.max(4, root.height * 0.006)
+                color: index < root.lit ? "#1793D1" : "#1C1C1C"
             }
         }
+    }
+
+    Text {
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: root.width * 0.06
+        anchors.bottomMargin: root.height * 0.048
+        text: "> boot"
+        color: "#565650"
+        font.family: "monospace"
+        font.pixelSize: Math.max(9, root.height * 0.012)
+    }
+
+    Text {
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: root.width * 0.06
+        anchors.bottomMargin: root.height * 0.048
+        text: "tty1 / kde plasma"
+        color: "#565650"
+        font.family: "monospace"
+        font.pixelSize: Math.max(9, root.height * 0.012)
+    }
+
+    Rectangle {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: root.height * 0.06
+        width: Math.max(10, root.height * 0.016)
+        height: width
+        color: "#F2F2EC"
+        opacity: (Math.floor(stage / 2) % 2) === 0 ? 0.0 : 1.0
     }
 }

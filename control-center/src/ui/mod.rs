@@ -1,6 +1,6 @@
 //! Bausteine des Designsytems.
 //!
-//! Alles Sichtbare entsteht hier: Glas-Panels mit Ring, Bento-Raster,
+//! Alles Sichtbare entsteht hier: schwarze Blöcke mit Eckmarken, Bento-Raster,
 //! segmentierte Messbalken, Datentabellen, Timeline und Code-Blöcke.
 
 pub mod diagnose;
@@ -51,7 +51,7 @@ pub fn hint(ui: &mut Ui, text: &str) {
 
 // ---------------------------------------------------------------- Karten
 
-/// Glas-Panel mit Haarlinie und äußerem Ring.
+/// Schwarzer Block mit harter 1-px-Kante.
 fn glass() -> egui::Frame {
     egui::Frame::new()
         .fill(theme::PANEL)
@@ -60,13 +60,20 @@ fn glass() -> egui::Frame {
         .inner_margin(Margin::symmetric(16, 14))
 }
 
-fn ring(ui: &Ui, rect: Rect) {
-    ui.painter().rect_stroke(
-        rect.expand(2.0),
-        CornerRadius::same(theme::CARD_RADIUS + 2),
-        Stroke::new(1.0_f32, theme::RING),
-        StrokeKind::Middle,
-    );
+/// Eckmarken statt runder Ringe – wie auf einem Plotterbogen.
+fn corners(ui: &Ui, rect: Rect) {
+    let painter = ui.painter();
+    let stroke = Stroke::new(1.0_f32, theme::RING);
+    let len = 7.0;
+    for (x, y, dx, dy) in [
+        (rect.left(), rect.top(), 1.0, 1.0),
+        (rect.right(), rect.top(), -1.0, 1.0),
+        (rect.left(), rect.bottom(), 1.0, -1.0),
+        (rect.right(), rect.bottom(), -1.0, -1.0),
+    ] {
+        painter.line_segment([Pos2::new(x, y), Pos2::new(x + dx * len, y)], stroke);
+        painter.line_segment([Pos2::new(x, y), Pos2::new(x, y + dy * len)], stroke);
+    }
 }
 
 pub fn panel(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
@@ -74,7 +81,7 @@ pub fn panel(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
         ui.set_min_width(ui.available_width());
         add(ui);
     });
-    ring(ui, inner.response.rect);
+    corners(ui, inner.response.rect);
 }
 
 /// Panel mit Titelzeile: Akzent-Marke, Titel, optionale Monospace-Notiz.
@@ -91,13 +98,13 @@ pub fn panel_titled(ui: &mut Ui, title: &str, meta: &str, add: impl FnOnce(&mut 
 
 pub fn card_header(ui: &mut Ui, title: &str, meta: &str) {
     ui.horizontal(|ui| {
-        let (mark, _) = ui.allocate_exact_size(Vec2::new(5.0, 12.0), Sense::hover());
+        let (mark, _) = ui.allocate_exact_size(Vec2::new(3.0, 14.0), Sense::hover());
         ui.painter()
-            .rect_filled(mark, CornerRadius::same(1), theme::ACCENT);
+            .rect_filled(mark, CornerRadius::ZERO, theme::ACCENT);
         ui.add_space(2.0);
         ui.label(
-            RichText::new(title)
-                .font(theme::sans(13.0))
+            RichText::new(format!("[ {} ]", title.to_uppercase()))
+                .font(theme::mono(11.0))
                 .color(theme::TEXT),
         );
         if !meta.is_empty() {
@@ -153,10 +160,10 @@ pub fn metric(ui: &mut Ui, label: &str, value: &str, sub: &str, accent: Color32)
         ui.horizontal(|ui| {
             let (mark, _) = ui.allocate_exact_size(Vec2::splat(5.0), Sense::hover());
             ui.painter()
-                .rect_filled(mark, CornerRadius::same(1), accent);
+                .rect_filled(mark, CornerRadius::ZERO, accent);
             ui.add_space(2.0);
             ui.label(
-                RichText::new(label.to_uppercase())
+                RichText::new(format!("> {}", label.to_uppercase()))
                     .font(theme::mono(9.0))
                     .color(theme::MUTED),
             );
@@ -164,7 +171,7 @@ pub fn metric(ui: &mut Ui, label: &str, value: &str, sub: &str, accent: Color32)
         ui.add_space(9.0);
         ui.label(
             RichText::new(value)
-                .font(theme::display(22.0))
+                .font(theme::display(24.0))
                 .color(theme::TEXT),
         );
         ui.add_space(1.0);
@@ -226,12 +233,12 @@ pub fn badge(ui: &mut Ui, text: &str, color: Color32) -> Response {
     let size = galley.size() + padding * 2.0;
     let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
     let painter = ui.painter();
-    let radius = CornerRadius::same(4);
+    let radius = CornerRadius::ZERO;
     painter.rect_filled(rect, radius, theme::alpha(color, 24));
     painter.rect_stroke(
         rect,
         radius,
-        Stroke::new(1.0_f32, theme::alpha(color, 90)),
+        Stroke::new(1.0_f32, theme::alpha(color, 120)),
         StrokeKind::Inside,
     );
     painter.galley(rect.min + padding, galley, color);
@@ -249,8 +256,8 @@ pub fn chip(ui: &mut Ui, positive: bool, text: &str) {
         theme::FAINT
     };
     let galley = ui.painter().layout_no_wrap(
-        text.to_string(),
-        theme::mono(10.0),
+        text.to_uppercase(),
+        theme::mono(9.5),
         if positive { theme::TEXT } else { theme::MUTED },
     );
     let padding = Vec2::new(9.0, 5.0);
@@ -261,12 +268,12 @@ pub fn chip(ui: &mut Ui, positive: bool, text: &str) {
     );
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let painter = ui.painter();
-    let radius = CornerRadius::same(6);
+    let radius = CornerRadius::ZERO;
     painter.rect_filled(rect, radius, theme::GLASS);
     painter.rect_stroke(
         rect,
         radius,
-        Stroke::new(1.0_f32, theme::HAIRLINE),
+        Stroke::new(1.0_f32, if positive { theme::HAIRLINE_STRONG } else { theme::HAIRLINE }),
         StrokeKind::Inside,
     );
 
@@ -275,11 +282,11 @@ pub fn chip(ui: &mut Ui, positive: bool, text: &str) {
         Vec2::splat(5.0),
     );
     if positive {
-        painter.rect_filled(square, CornerRadius::same(1), color);
+        painter.rect_filled(square, CornerRadius::ZERO, color);
     } else {
         painter.rect_stroke(
             square,
-            CornerRadius::same(1),
+            CornerRadius::ZERO,
             Stroke::new(1.0_f32, color),
             StrokeKind::Inside,
         );
@@ -291,7 +298,7 @@ pub fn chip(ui: &mut Ui, positive: bool, text: &str) {
     );
 }
 
-/// Auswahlfläche in Monospace: ausgewählt füllt Säure-Grün.
+/// Auswahlfläche in Monospace: ausgewählt füllt Arch-Blau.
 pub fn choice(ui: &mut Ui, selected: bool, label: &str) -> Response {
     let foreground = if selected { theme::INK } else { theme::MUTED };
     let galley = ui
@@ -302,7 +309,7 @@ pub fn choice(ui: &mut Ui, selected: bool, label: &str) -> Response {
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
 
     let painter = ui.painter();
-    let radius = CornerRadius::same(5);
+    let radius = CornerRadius::ZERO;
     let fill = if selected {
         theme::ACCENT
     } else if response.hovered() {
@@ -567,7 +574,7 @@ pub fn code_block(ui: &mut Ui, id: &str, label: &str, text: &str, max_height: f3
 
 // ---------------------------------------------------------------- Knöpfe
 
-/// Hauptaktion: Säure-Grün auf Schwarz.
+/// Hauptaktion: Arch-Blau auf tiefem Schwarz, Monospace in Kapitälchen.
 pub fn primary(ui: &mut Ui, text: &str) -> Response {
     let enabled = ui.is_enabled();
     let (fill, foreground) = if enabled {
@@ -577,27 +584,27 @@ pub fn primary(ui: &mut Ui, text: &str) -> Response {
     };
     ui.add(
         egui::Button::new(
-            RichText::new(text)
-                .font(theme::sans(12.5))
+            RichText::new(text.to_uppercase())
+                .font(theme::mono(11.5))
                 .color(foreground),
         )
         .fill(fill)
-        .stroke(Stroke::NONE)
-        .min_size(Vec2::new(0.0, 30.0)),
+        .stroke(Stroke::new(1.0_f32, fill))
+        .min_size(Vec2::new(0.0, 32.0)),
     )
 }
 
-/// Nebenaktion: erhöhte Fläche mit Haarlinie.
+/// Nebenaktion: erhöhte Fläche mit harter Kante.
 pub fn ghost(ui: &mut Ui, text: &str) -> Response {
     ui.add(
         egui::Button::new(
-            RichText::new(text)
-                .font(theme::sans(12.5))
+            RichText::new(text.to_uppercase())
+                .font(theme::mono(11.5))
                 .color(theme::TEXT),
         )
         .fill(theme::RAISED)
-        .stroke(Stroke::new(1.0_f32, theme::HAIRLINE))
-        .min_size(Vec2::new(0.0, 30.0)),
+        .stroke(Stroke::new(1.0_f32, theme::HAIRLINE_STRONG))
+        .min_size(Vec2::new(0.0, 32.0)),
     )
 }
 
@@ -606,10 +613,11 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, label: &str, accent: Color32) -> Res
     let galley = if label.is_empty() {
         None
     } else {
-        Some(
-            ui.painter()
-                .layout_no_wrap(label.to_string(), theme::sans(12.0), theme::TEXT),
-        )
+        Some(ui.painter().layout_no_wrap(
+            label.to_uppercase(),
+            theme::mono(11.0),
+            theme::TEXT,
+        ))
     };
     let icon_size = 15.0;
     let text_width = galley.as_ref().map(|g| g.size().x + 7.0).unwrap_or(0.0);
@@ -620,7 +628,7 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, label: &str, accent: Color32) -> Res
 
     painter.rect_filled(
         rect,
-        CornerRadius::same(7),
+        CornerRadius::ZERO,
         if hovered {
             theme::RAISED
         } else {
@@ -629,11 +637,11 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, label: &str, accent: Color32) -> Res
     );
     painter.rect_stroke(
         rect,
-        CornerRadius::same(7),
+        CornerRadius::ZERO,
         Stroke::new(
             1.0_f32,
             if hovered {
-                theme::alpha(accent, 120)
+                theme::alpha(accent, 160)
             } else {
                 theme::HAIRLINE
             },

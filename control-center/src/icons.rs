@@ -45,7 +45,7 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 } else {
                     color.gamma_multiply(0.55)
                 };
-                painter.rect_filled(tile, CornerRadius::same((sz * 0.45) as u8), fill);
+                painter.rect_filled(tile, CornerRadius::ZERO, fill);
             }
         }
         Icon::Gauge => {
@@ -58,12 +58,12 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
             let body = Rect::from_center_size(c, Vec2::new(1.72 * r, 1.02 * r));
             painter.rect_filled(
                 body,
-                CornerRadius::same((0.34 * r) as u8),
+                CornerRadius::ZERO,
                 color.gamma_multiply(0.16),
             );
             painter.rect_stroke(
                 body,
-                CornerRadius::same((0.34 * r) as u8),
+                CornerRadius::ZERO,
                 st,
                 egui::StrokeKind::Inside,
             );
@@ -92,7 +92,7 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
             );
             painter.rect_stroke(
                 screen,
-                CornerRadius::same((0.14 * r) as u8),
+                CornerRadius::ZERO,
                 st,
                 egui::StrokeKind::Inside,
             );
@@ -141,7 +141,7 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
             let frame = Rect::from_center_size(c, Vec2::new(1.78 * r, 1.36 * r));
             painter.rect_stroke(
                 frame,
-                CornerRadius::same((0.16 * r) as u8),
+                CornerRadius::ZERO,
                 st,
                 egui::StrokeKind::Inside,
             );
@@ -195,7 +195,7 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
             let square = Rect::from_center_size(c, Vec2::splat(1.18 * r));
             painter.rect_stroke(
                 square,
-                CornerRadius::same((0.14 * r) as u8),
+                CornerRadius::ZERO,
                 st,
                 egui::StrokeKind::Inside,
             );
@@ -244,7 +244,7 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 );
                 painter.rect_filled(
                     bar,
-                    CornerRadius::same((0.10 * r) as u8),
+                    CornerRadius::ZERO,
                     color.gamma_multiply(if i == 1 { 1.0 } else { 0.55 }),
                 );
             }
@@ -263,13 +263,13 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 Rect::from_min_size(c + Vec2::new(-0.20 * r, -0.20 * r), Vec2::splat(0.88 * r));
             painter.rect_stroke(
                 back,
-                CornerRadius::same((0.14 * r) as u8),
+                CornerRadius::ZERO,
                 Stroke::new(w * 0.85, color.gamma_multiply(0.6)),
                 egui::StrokeKind::Inside,
             );
             painter.rect_stroke(
                 front,
-                CornerRadius::same((0.14 * r) as u8),
+                CornerRadius::ZERO,
                 st,
                 egui::StrokeKind::Inside,
             );

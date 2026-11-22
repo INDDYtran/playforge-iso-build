@@ -651,7 +651,7 @@ impl ControlCenter {
                 }
 
                 ui.with_layout(Layout::bottom_up(Align::LEFT), |ui| {
-                    ui::mono_label(ui, "V1.0.0 · NOIR GRID", theme::FAINT, 8.5);
+                    ui::mono_label(ui, "V1.0.0 // ASCII BRUTAL", theme::FAINT, 8.5);
                     ui.add_space(9.0);
                     ui::hairline(ui);
                     ui.add_space(9.0);
@@ -672,39 +672,40 @@ impl ControlCenter {
 
     fn brand(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(Vec2::splat(30.0), Sense::hover());
             let painter = ui.painter();
-            painter.rect_filled(rect, CornerRadius::same(7), theme::RAISED);
+            painter.rect_filled(rect, CornerRadius::ZERO, theme::INK);
             painter.rect_stroke(
                 rect,
-                CornerRadius::same(7),
-                Stroke::new(1.0_f32, theme::HAIRLINE_STRONG),
+                CornerRadius::ZERO,
+                Stroke::new(1.0_f32, theme::TEXT),
                 egui::StrokeKind::Inside,
             );
             let c = rect.center();
-            let r = rect.width() * 0.28;
-            let tri = vec![
-                c + Vec2::new(-0.55 * r, -0.85 * r),
-                c + Vec2::new(0.95 * r, 0.0),
-                c + Vec2::new(-0.55 * r, 0.85 * r),
-            ];
-            painter.add(egui::Shape::convex_polygon(
-                tri,
-                theme::ACCENT,
-                Stroke::NONE,
-            ));
+            let apex = c + Vec2::new(0.0, -7.0);
+            for leg in [-8.0_f32, 8.0] {
+                painter.line_segment(
+                    [apex, c + Vec2::new(leg, 6.0)],
+                    Stroke::new(2.0_f32, theme::ACCENT),
+                );
+            }
+            painter.rect_filled(
+                Rect::from_center_size(c + Vec2::new(0.0, 9.0), Vec2::new(5.0, 5.0)),
+                CornerRadius::ZERO,
+                theme::TEXT,
+            );
 
             ui.add_space(4.0);
             ui.vertical(|ui| {
                 ui.label(
                     RichText::new("PLAYFORGE")
-                        .font(theme::mono(11.0))
+                        .font(theme::mono(10.5))
                         .color(theme::TEXT),
                 );
                 ui.label(
-                    RichText::new("CONTROL CENTER")
+                    RichText::new("// CONTROL")
                         .font(theme::mono(8.0))
-                        .color(theme::FAINT),
+                        .color(theme::ACCENT),
                 );
             });
         });
@@ -718,14 +719,9 @@ impl ControlCenter {
         let painter = ui.painter();
 
         if selected {
-            painter.rect_filled(rect, CornerRadius::same(7), theme::RAISED);
-            let bar = Rect::from_min_size(
-                rect.left_top() + Vec2::new(0.0, 8.0),
-                Vec2::new(2.0, height - 16.0),
-            );
-            painter.rect_filled(bar, CornerRadius::ZERO, theme::ACCENT);
+            painter.rect_filled(rect, CornerRadius::ZERO, theme::ACCENT);
         } else if response.hovered() {
-            painter.rect_filled(rect, CornerRadius::same(7), theme::alpha(theme::TEXT, 8));
+            painter.rect_filled(rect, CornerRadius::ZERO, theme::alpha(theme::TEXT, 10));
         }
 
         painter.text(
@@ -733,11 +729,7 @@ impl ControlCenter {
             Align2::LEFT_CENTER,
             tab.index(),
             theme::mono(8.5),
-            if selected {
-                theme::ACCENT
-            } else {
-                theme::FAINT
-            },
+            if selected { theme::INK } else { theme::FAINT },
         );
 
         let icon_rect = Rect::from_min_size(
@@ -748,19 +740,15 @@ impl ControlCenter {
             painter,
             icon_rect,
             tab.icon(),
-            if selected {
-                theme::ACCENT
-            } else {
-                theme::MUTED
-            },
+            if selected { theme::INK } else { theme::MUTED },
         );
 
         painter.text(
             rect.left_center() + Vec2::new(58.0, 0.0),
             Align2::LEFT_CENTER,
-            tab.title(),
-            theme::sans(12.5),
-            if selected { theme::TEXT } else { theme::MUTED },
+            tab.title().to_uppercase(),
+            theme::mono(10.5),
+            if selected { theme::INK } else { theme::MUTED },
         );
 
         if response.hovered() {
@@ -794,8 +782,8 @@ impl ControlCenter {
                             "Systemdaten werden alle 8 Sekunden neu eingelesen.".to_string(),
                         ),
                     };
-                    let (rect, _) = ui.allocate_exact_size(Vec2::splat(6.0), Sense::hover());
-                    ui.painter().rect_filled(rect, CornerRadius::same(1), color);
+                    let (rect, _) = ui.allocate_exact_size(Vec2::splat(7.0), Sense::hover());
+                    ui.painter().rect_filled(rect, CornerRadius::ZERO, color);
                     ui.label(
                         RichText::new(text)
                             .font(theme::mono(9.5))
@@ -870,11 +858,11 @@ impl ControlCenter {
 
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
-                        ui::kicker(ui, &format!("PLAYFORGE · {} / {}", tab.index(), tab.slug()));
+                        ui::kicker(ui, &format!("PLAYFORGE :: {} / {}", tab.index(), tab.slug()));
                         ui.add_space(4.0);
                         ui.label(
-                            RichText::new(tab.title())
-                                .font(theme::display(27.0))
+                            RichText::new(tab.title().to_uppercase())
+                                .font(theme::display(28.0))
                                 .color(theme::TEXT),
                         );
                         ui.add_space(1.0);

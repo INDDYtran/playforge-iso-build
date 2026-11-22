@@ -21,7 +21,8 @@ abgestimmtes Paket- und Konfigurationsset mit.
   Shader-Cache-Limit, Gamecontroller-udev-Regeln, Leistungsprofile
 - **Werkzeuge:** `playforge-install`, `playforge-doctor`, `playforge-tweaks`,
   `playforge-run`, `playforge-update`, `playforge-proton`,
-  `playforge-snapshot`, `playforge-rollback`, `playforge-control-center`
+  `playforge-snapshot`, `playforge-rollback`, `playforge-control-center`,
+  `playforge-files`
 
 ## Voraussetzungen für den Build
 
@@ -29,9 +30,9 @@ abgestimmtes Paket- und Konfigurationsset mit.
 - Paket `archiso` (`pacman -S --needed archiso`)
 - aktiviertes `[multilib]`-Repository (für Steam und `lib32-*`):
   in `/etc/pacman.conf` `[multilib]` einkommentieren, danach `sudo pacman -Sy`
-- `rust` für das Control Center (`sudo pacman -S --needed rust`); im
-  Builder-Container ist Rust enthalten, auf einem Arch-Host ohne Rust wird das
-  ISO ohne Control Center gebaut (Warnung am Ende von `build.sh`)
+- `rust` für Control Center und Dateibrowser (`sudo pacman -S --needed rust`);
+  im Builder-Container ist Rust enthalten, auf einem Arch-Host ohne Rust wird
+  das ISO ohne die beiden Rust-Apps gebaut (Warnung am Ende von `build.sh`)
 - ca. 25 GB freier Speicher, 8 GB RAM empfohlen
 - Internetzugang
 
@@ -398,9 +399,23 @@ ins Leere.
 ### Playforge-Theme
 
 Live-System und installiertes System verwenden das globale KDE-Theme
-`org.playforge.desktop` mit dunklem Farbschema, Playforge-Wallpaper,
-eigenem Startbildschirm (Splash), angepasstem SDDM-Anmeldebildschirm und
-einem Icon-Theme auf Breeze-Basis. Die Einrichtung übernimmt
+`org.playforge.desktop` im Design **ASCII Brutal**: tiefes Schwarz (#000),
+Papierweiß, Arch-Blau (#1793D1), Monospace-Typografie und harte Kanten ohne
+Rundungen. Dazu gehören Playforge-Wallpaper mit ASCII-Wappen und Raster,
+ein eigener Startbildschirm (Splash), ein angepasster
+SDDM-Anmeldebildschirm und ein Icon-Theme auf Breeze-Basis.
+
+| Rolle | Farbe |
+| --- | --- |
+| Grundfläche | `#000000` |
+| Karten und Flächen | `#060606` / `#101010` |
+| Text | `#F2F2EC` |
+| Akzent | `#1793D1` (Arch-Blau) |
+| Status | `#37E08A` OK, `#FFC53D` Warnung, `#FF5A4A` Fehler |
+
+Die Bildmarken (Wallpaper, Boot-Splash, Splash-Vorschau, Logo) erzeugt
+`scripts/generate-branding.py` deterministisch aus der mitgelieferten
+Geist Mono; die SVG-Icons liegen direkt im Overlay. Die Einrichtung übernimmt
 `/usr/local/lib/playforge/apply-theme.sh`; beim ersten Login wendet
 `/usr/local/lib/playforge/apply-user-theme.sh` das Theme zusätzlich auf die
 Plasma-Sitzung an (u. a. Wallpaper).
@@ -422,9 +437,10 @@ selbst und umgeht damit Firmware, die den Arch-Kernel nicht direkt starten
 kann (u. a. VirtualBox mit aktiviertem EFI).
 
 Der Start ist von der Initramfs bis zum Login durchgehend gebrandet:
-Plymouth zeigt das Playforge-Logo auf dem Noir-Grid mit atmender Glut
-(`/usr/share/plymouth/themes/playforge`), das BIOS-Bootmenü nutzt dieselbe
-Grafik und SDDM sowie der Plasma-Splash setzen das Design fort. `build.sh`
+Plymouth zeigt das ASCII-Wappen in Arch-Blau auf tiefem Schwarz, dazu einen
+blinkenden Blockcursor (`/usr/share/plymouth/themes/playforge`); das
+BIOS-Bootmenü nutzt dieselbe Grafik und SDDM sowie der Plasma-Splash setzen
+das Design fort. `build.sh`
 trägt den `plymouth`-Hook in die archiso-Konfiguration ein, nimmt das Theme
 über `FILES=` mit in die Initramfs und prüft anschließend, dass es dort
 ankommt. Der Installer (`configure-target.sh`) richtet Hook und Kernelzeile
@@ -484,6 +500,37 @@ bash scripts/build-control-center.sh   # out/control-center/playforge-control-ce
 
 `build.sh` baut die App automatisch, sofern `cargo` vorhanden ist, und legt sie
 in das Live-System und in die Installation.
+
+### Playforge Files
+
+`playforge-files` ist der Dateibrowser der Distribution – ebenfalls eine
+Rust-Applikation (egui), ein einzelnes Binary ohne Webserver oder
+GTK/Qt-Abhängigkeiten. Start über das Anwendungsmenü, den Starter
+„Playforge Dateien“ oder `playforge-files`.
+
+- **Navigation** – Seitenbereich mit persönlichem Ordner, XDG-Ordnern
+  (auch lokalisiert), Dateisystem und eingehängten Datenträgern; Zurück,
+  Vorwärts, übergeordneter Ordner und klickbare Pfadleiste
+- **Liste** – Ordner zuerst, sortierbar nach Name, Größe oder Änderungsdatum,
+  versteckte Dateien per Strg+H, Filterfeld für den aktuellen Ordner
+- **Vorschau** – Text- und Quelltextdateien (bis 96 KB), Bilder bis 64 MB,
+  Metadaten mit Größe, Datum und Unix-Rechten
+- **Aktionen** – Öffnen über `xdg-open`, Umbenennen (F2), neuer Ordner,
+  Löschen (Entf) und Pfad kopieren; gelöscht wird über `gio trash` bzw.
+  `trash-put`, nur ohne diese Werkzeuge endgültig
+- **Tastatur** – Pfeiltasten wählen, Enter öffnet, Rücktaste geht nach oben,
+  F5 liest neu ein, Strg+F setzt den Fokus ins Filterfeld, Esc leert den Filter
+
+Selbst bauen und testen:
+
+```bash
+bash scripts/build-file-browser.sh   # out/file-browser/playforge-files
+./out/file-browser/playforge-files
+```
+
+`build.sh` baut auch diese App automatisch, sofern `cargo` vorhanden ist, und
+legt sie in das Live-System und in die Installation. Das Systemupdate
+(`playforge-update`) liefert sie an bestehende Installationen nach.
 
 ### Spiele mit GameMode/MangoHud/Gamescope starten
 
@@ -548,6 +595,7 @@ Dockerfile                   Gepinnter Arch-Builder-Container
 scripts/
   build-iso-container.sh     Lokaler Docker-/Podman-Build
   build-control-center.sh    Control Center (Rust) lokal bauen
+  build-file-browser.sh      Dateibrowser (Rust) lokal bauen
   pack-update.sh             Systemupdate-Archiv für das GitHub-Release bauen
   sign-release-assets.sh     Release-Dateien mit Ed25519 signieren
   generate-signing-key.sh    neues Signaturschlüsselpaar erzeugen
@@ -556,6 +604,9 @@ scripts/
   boot-smoke-test.sh         QEMU/OVMF-Boottest mit serieller Konsole
 control-center/              Control Center für Linux (Rust, egui)
   src/                       Fenster, Seiten, Systemabfragen, Aktionen
+  Cargo.toml                 Abhängigkeiten und Release-Profil
+file-browser/                Dateibrowser für Linux (Rust, egui)
+  src/                       Fenster, Dateiliste, Vorschau, Dateisystem
   Cargo.toml                 Abhängigkeiten und Release-Profil
 profile/                     Overlay auf das archiso-Releng-Profil
   profiledef.sh              ISO-Name, Label, Bootmodi, Rechte
@@ -569,6 +620,7 @@ overlay/                     Dateien für Live-System *und* Installation
   usr/local/share/playforge/ Paketliste des Zielsystems
   usr/share/                 Theme, Wallpaper, Farbschema, Icons, Logo,
                              Menüeintrag des Control Centers
+scripts/generate-branding.py Bildmarken (Wallpaper, Splash, Logo) erzeugen
 ```
 
 Der Paketcache unter `.cache/pacman/` wird beim Container-Build angelegt und ist
