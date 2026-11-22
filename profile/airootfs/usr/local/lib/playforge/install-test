@@ -113,6 +113,6 @@ arch-chroot /mnt pacman-key --list-keys \
     ABFBB39873AE76F34A0A6DD32103C96929550BF7 >/dev/null ||
     fail "Repository-Schlüssel ist im Zielsystem nicht importiert."
 
-umount -R /mnt
+umount -R /mnt 2>/dev/null || true
 success=1
 printf '\n%s\n' "$ok_marker"

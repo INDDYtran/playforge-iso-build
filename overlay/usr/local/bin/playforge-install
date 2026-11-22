@@ -352,7 +352,19 @@ rm -rf "$target/var/cache/pacman/pkg/"* 2>/dev/null || true
 sync
 
 info "Hänge Zielsystem aus"
-if ! umount -R "$target"; then
+# Im chroot gestartete Hintergrundprozesse (z. B. gpg-agent aus pacman-key)
+# laufen mit Programmen aus dem Ziel weiter und halten den Einhängepunkt offen.
+for proc in /proc/[0-9]*; do
+    exe="$(readlink -f "$proc/exe" 2>/dev/null || true)"
+    case "$exe" in
+        "$target"/*) kill "${proc#/proc/}" 2>/dev/null || true ;;
+    esac
+done
+for _ in 1 2 3 4 5; do
+    umount -R "$target" 2>/dev/null && break
+    sleep 1
+done
+if mountpoint -q "$target"; then
     warn "Konnte $target nicht vollständig aushängen. Bitte vor dem Neustart prüfen."
 fi
 
