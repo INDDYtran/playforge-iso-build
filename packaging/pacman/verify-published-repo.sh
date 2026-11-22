@@ -63,7 +63,7 @@ printf '\n'
 (( ok )) || die "playforge.db ist unter $url nicht mit Version $expected verfügbar."
 
 cat "$tmp/info"
-pacman -Sw --config "$tmp/pacman.conf" --nodeps --noconfirm \
+pacman -Sw --config "$tmp/pacman.conf" --nodeps --nodeps --noconfirm \
     playforge-tools playforge-theme playforge-control-center
 
 printf '\nVeröffentlichte Paketquelle ist signiert und nutzbar.\n'

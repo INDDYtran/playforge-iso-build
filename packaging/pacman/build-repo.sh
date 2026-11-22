@@ -112,7 +112,9 @@ Server = file://$pkgdir
 EOF
 pacman -Sy --config "$tmp/pacman.conf" --noconfirm >/dev/null
 pacman -Si --config "$tmp/pacman.conf" playforge-tools >/dev/null
-pacman -Sw --config "$tmp/pacman.conf" --nodeps --noconfirm \
+# --nodeps nur einmal prüft Paketnamen weiter; zweimal überspringt alle
+# Abhängigkeiten (die Test-DB enthält absichtlich nur [playforge]).
+pacman -Sw --config "$tmp/pacman.conf" --nodeps --nodeps --noconfirm \
     playforge-tools playforge-theme playforge-control-center >/dev/null
 
 msg "Fertig"
