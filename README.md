@@ -225,13 +225,14 @@ jedes ISO zusätzlich als Release veröffentlicht (siehe Download).
 
 ## Download
 
-Fertige ISOs liegen dauerhaft als GitHub-Release `iso-<commit>` bereit, nicht
-nur als CI-Artefakt mit Ablaufdatum. GitHub erlaubt höchstens 2 GiB pro
-Release-Asset – ein ISO hat rund 3 GB, deshalb besteht jedes Release aus
-Teilen:
+Fertige ISOs liegen als GitHub-Release `iso-<commit>` bereit, nicht nur als
+CI-Artefakt mit Ablaufdatum. Es wird nur das aktuelle ISO-Release behalten;
+ältere werden entfernt, damit der Release-Speicher nicht wächst. GitHub
+erlaubt höchstens 2 GiB pro Release-Asset – ein ISO hat rund 3 GB, deshalb
+besteht jedes Release aus Teilen:
 
 ```bash
-gh release download iso-9107dbdfe7a9 -R INDDYtran/playforge-iso-build
+gh release download iso-c07c9f780149 -R INDDYtran/playforge-iso-build
 cat playforge-*.iso.part-* > playforge.iso
 sha256sum -c playforge-*.iso.sha256
 sudo dd if=playforge.iso of=/dev/sdX bs=4M status=progress oflag=sync
