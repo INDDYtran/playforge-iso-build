@@ -359,6 +359,10 @@ Playforge-Varianten bleiben dort auswählbar.
 
 ### Boot-Splash
 
+Gebootet wird über syslinux (BIOS) und GRUB (UEFI); GRUB lädt den Kernel
+selbst und umgeht damit Firmware, die den Arch-Kernel nicht direkt starten
+kann (u. a. VirtualBox mit aktiviertem EFI).
+
 Der Start ist von der Initramfs bis zum Login durchgehend gebrandet:
 Plymouth zeigt das Playforge-Logo auf dem Noir-Grid mit atmender Glut
 (`/usr/share/plymouth/themes/playforge`), das BIOS-Bootmenü nutzt dieselbe
