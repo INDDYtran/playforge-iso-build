@@ -3,5 +3,7 @@
 /.pkgcheck/
 /.cache/
 /control-center/target/
+/file-browser/target/
 *.iso
 *.iso.sha256
+__pycache__/

@@ -17,6 +17,7 @@ if [[ "${PLAYFORGE_JOB:-iso}" == "payload" ]]; then
     printf '    SOURCE_DATE_EPOCH: %s\n\n' "${SOURCE_DATE_EPOCH}"
 
     bash scripts/build-control-center.sh
+    bash scripts/build-file-browser.sh
     bash scripts/pack-update.sh
     exit 0
 fi

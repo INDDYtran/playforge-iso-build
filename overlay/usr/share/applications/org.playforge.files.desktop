@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Playforge Files
+Name[de]=Playforge Dateien
+GenericName=File Browser
+GenericName[de]=Dateibrowser
+Comment=Browse, preview and manage files
+Comment[de]=Dateien durchsuchen, ansehen und verwalten
+Exec=playforge-files %f
+Icon=org.playforge.files
+Terminal=false
+Categories=System;FileManager;Utility;
+Keywords=playforge;files;dateien;dateibrowser;file;browser;explorer;
+MimeType=inode/directory;
+StartupNotify=true
+StartupWMClass=org.playforge.files

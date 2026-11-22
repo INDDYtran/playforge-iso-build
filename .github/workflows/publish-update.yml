@@ -1,7 +1,7 @@
 name: Playforge System-Update
 
-# Baut nur die Playforge-Systemdateien (Overlay + Control Center) und
-# veröffentlicht sie als Release-Assets. Installierte Systeme holen sie mit
+# Baut nur die Playforge-Systemdateien (Overlay, Control Center und
+# Dateibrowser) und veröffentlicht sie als Release-Assets. Installierte Systeme holen sie mit
 # `sudo playforge-update` – ohne neues ISO.
 on:
   workflow_dispatch:
@@ -11,8 +11,10 @@ on:
     paths:
       - "overlay/**"
       - "control-center/**"
+      - "file-browser/**"
       - "scripts/pack-update.sh"
       - "scripts/build-control-center.sh"
+      - "scripts/build-file-browser.sh"
       - "scripts/container-entrypoint.sh"
       - ".github/workflows/publish-update.yml"
 
@@ -125,7 +127,7 @@ jobs:
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" \
               --title "Playforge System-Update" \
-              --notes "Systemdateien für \`playforge-update\`: Overlay, Theme, Konfiguration und Control Center. Kernel, Pakete und Bootloader werden nicht verändert." \
+              --notes "Systemdateien für \`playforge-update\`: Overlay, Theme, Konfiguration, Control Center und Dateibrowser. Kernel, Pakete und Bootloader werden nicht verändert." \
               --latest
           fi
           gh release upload "$tag" \

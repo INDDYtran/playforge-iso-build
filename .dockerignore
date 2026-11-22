@@ -8,5 +8,6 @@ work
 .cache
 .pkgcheck
 control-center/target
+file-browser/target
 *.iso
 *.iso.sha256

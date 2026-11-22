@@ -89,6 +89,7 @@ RUN set -eux; \
     install -m 0755 /build/scripts/boot-smoke-test.sh /usr/local/bin/playforge-boot-smoke; \
     for script in \
         /build/build.sh \
+        /build/scripts/build-file-browser.sh \
         /build/scripts/container-entrypoint.sh \
         /build/scripts/verify-iso.sh \
         /build/scripts/boot-smoke-test.sh \

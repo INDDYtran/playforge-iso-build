@@ -15,6 +15,7 @@ repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 out_dir="${PLAYFORGE_UPDATE_OUT:-$repo_dir/out}"
 version="${PLAYFORGE_VERSION:-}"
 binary="${PLAYFORGE_CONTROL_CENTER:-}"
+files_binary="${PLAYFORGE_FILE_BROWSER:-}"
 epoch="${SOURCE_DATE_EPOCH:-$(date -u +%s)}"
 
 msg() { printf '\n==> %s\n' "$*"; }
@@ -46,6 +47,20 @@ fi
 [[ -n "$binary" && -f "$binary" ]] ||
     die "Control-Center-Binary nicht gefunden. Erst scripts/build-control-center.sh ausführen."
 
+if [[ -z "$files_binary" ]]; then
+    for candidate in \
+        "$out_dir/file-browser/playforge-files" \
+        "$repo_dir/file-browser/target/release/playforge-files" \
+        "$repo_dir/file-browser/target/debug/playforge-files"; do
+        if [[ -f "$candidate" ]]; then
+            files_binary="$candidate"
+            break
+        fi
+    done
+fi
+[[ -n "$files_binary" && -f "$files_binary" ]] ||
+    die "Dateibrowser-Binary nicht gefunden. Erst scripts/build-file-browser.sh ausführen."
+
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 payload="$stage/payload"
@@ -58,6 +73,7 @@ cp -a "$repo_dir/overlay/." "$payload/"
 # Halte-Regeln des Nutzers dürfen von einem Update nicht überschrieben werden.
 rm -f -- "$payload/etc/pacman.conf"
 install -Dm0755 "$binary" "$payload/usr/local/bin/playforge-control-center"
+install -Dm0755 "$files_binary" "$payload/usr/local/bin/playforge-files"
 mkdir -p "$payload/etc/playforge"
 printf '%s\n' "$version" >"$payload/etc/playforge/version"
 

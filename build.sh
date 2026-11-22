@@ -137,15 +137,19 @@ if [[ -f "$splash_png" && -f "$profile_dir/syslinux/splash.png" ]]; then
     install -m 0644 "$splash_png" "$profile_dir/syslinux/splash.png"
 fi
 
-msg "Baue Control Center (Rust)"
+msg "Baue Control Center und Dateibrowser (Rust)"
 cc_dir="$repo_dir/control-center"
+fb_dir="$repo_dir/file-browser"
 if command -v cargo >/dev/null 2>&1; then
     (cd "$cc_dir" && cargo build --release --locked)
     install -Dm0755 "$cc_dir/target/release/playforge-control-center" \
         "$profile_dir/airootfs/usr/local/share/playforge/overlay/usr/local/bin/playforge-control-center"
+    (cd "$fb_dir" && cargo build --release --locked)
+    install -Dm0755 "$fb_dir/target/release/playforge-files" \
+        "$profile_dir/airootfs/usr/local/share/playforge/overlay/usr/local/bin/playforge-files"
 else
-    warn "cargo fehlt – das Control Center wird nicht ins ISO aufgenommen."
-    warn "Nachinstallieren mit 'pacman -S --needed rust' oder scripts/build-control-center.sh nutzen."
+    warn "cargo fehlt – Control Center und Dateibrowser werden nicht ins ISO aufgenommen."
+    warn "Nachinstallieren mit 'pacman -S --needed rust' oder scripts/build-control-center.sh bzw. scripts/build-file-browser.sh nutzen."
 fi
 
 msg "Erzeuge Paketliste"
